@@ -1,27 +1,32 @@
 // app/page.tsx — landing + tool entry, branded like welcometomorrow.io
+import Image from "next/image";
 import { AuditApp } from "@/components/AuditApp";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-paper">
-      {/* Top nav echoing the Welcome Tomorrow dark bar */}
-      <nav className="bg-ink">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-paper">
-              <span className="text-sm">☀</span>
-            </span>
-            <span className="font-display text-sm font-bold leading-tight text-paper">
-              WELCOME<br />TOMORROW
-            </span>
-          </div>
-          <div className="hidden items-center gap-7 text-sm font-semibold text-paper md:flex">
-            <a href="https://welcometomorrow.io" className="hover:text-electric">Services</a>
-            <a href="https://welcometomorrow.io" className="hover:text-electric">Expertise</a>
-            <a href="https://welcometomorrow.io" className="hover:text-electric">About us</a>
-            <a href="https://welcometomorrow.io" className="hover:text-electric">Blog</a>
-            <a href="https://welcometomorrow.io/contact"
-              className="rounded-lg border border-paper px-4 py-2 hover:bg-paper hover:text-ink">
+    <main className="relative min-h-screen">
+      {/* Top nav — transparent, floating over the warped-grid canvas */}
+      <nav className="relative z-10">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
+          <a href="https://welcometomorrow.io" className="flex items-center" aria-label="Welcome Tomorrow">
+            <Image
+              src="/welcome-tomorrow-logo.png"
+              alt="Welcome Tomorrow"
+              width={362}
+              height={117}
+              priority
+              className="h-9 w-auto md:h-10"
+            />
+          </a>
+          <div className="hidden items-center gap-8 text-sm font-semibold text-paper md:flex">
+            <a href="https://welcometomorrow.io" className="transition hover:text-wtgreen">Services</a>
+            <a href="https://welcometomorrow.io" className="transition hover:text-wtgreen">Expertise</a>
+            <a href="https://welcometomorrow.io" className="transition hover:text-wtgreen">About us</a>
+            <a href="https://welcometomorrow.io" className="transition hover:text-wtgreen">Blog</a>
+            <a
+              href="https://welcometomorrow.io/contact"
+              className="rounded-lg border border-white/30 px-4 py-2 transition hover:border-wtgreen hover:text-wtgreen"
+            >
               Let&apos;s talk →
             </a>
           </div>
@@ -30,9 +35,11 @@ export default function Home() {
 
       <AuditApp />
 
-      <footer className="border-t border-mist bg-cloud py-8 text-center text-sm text-slatebody">
+      <footer className="relative z-10 mt-10 border-t border-white/10 py-8 text-center text-sm text-muted">
         TomorrowRank — SEO &amp; AI Visibility Audit Tool ·{" "}
-        <a href="https://welcometomorrow.io" className="font-semibold text-electric">welcometomorrow.io</a>
+        <a href="https://welcometomorrow.io" className="font-semibold text-wtgreen hover:underline">
+          welcometomorrow.io
+        </a>
       </footer>
     </main>
   );

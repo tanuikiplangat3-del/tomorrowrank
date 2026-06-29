@@ -48,56 +48,60 @@ export function AuditApp() {
   }, [url, country, language, keyword]);
 
   if (phase === "done" && job?.report) {
-    return <Report report={job.report} ai={job.aiVisibility} />;
+    return (
+      <div className="relative z-10">
+        <Report report={job.report} ai={job.aiVisibility} />
+      </div>
+    );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-16">
-      {/* Heading (screenshot 2) */}
+    <div className="relative z-10 mx-auto max-w-3xl px-4 pb-16 pt-10 sm:pt-16">
+      {/* Heading — white, no underline (dark canvas) */}
       <div className="text-center">
-        <h1 className="font-display text-4xl font-extrabold leading-tight text-ink sm:text-5xl">
-          <span className="underline-sketch underline-sun">SEO Audit</span> &amp; AI Visibility Tool
+        <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-paper sm:text-6xl">
+          SEO Audit &amp; AI Visibility Tool
         </h1>
-        <p className="mt-4 text-lg font-medium text-slatebody">
+        <p className="mt-5 text-lg font-medium text-muted">
           + Simple, Affordable SEO / GEO Toolset
         </p>
       </div>
 
       {phase === "input" || phase === "error" ? (
         <div className="mt-10">
-          <div className="flex flex-col gap-3 rounded-xl2 border-2 border-ink p-2 sm:flex-row sm:items-center sm:p-1.5">
+          <div className="flex flex-col gap-3 rounded-xl2 border border-glassBorder bg-glass p-2 backdrop-blur-sm sm:flex-row sm:items-center sm:p-1.5">
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && start()}
               placeholder="Example.com"
-              className="flex-1 rounded-lg px-4 py-3 text-lg text-ink outline-none placeholder:text-slate-400"
+              className="flex-1 rounded-lg bg-transparent px-4 py-3 text-lg text-paper outline-none placeholder:text-white/40"
             />
             <button
               onClick={start}
-              className="rounded-lg bg-sun px-8 py-3 text-lg font-bold text-ink transition hover:brightness-95"
+              className="rounded-lg bg-wtgreen px-8 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep"
             >
-              Audit
+              Audit →
             </button>
           </div>
 
-          {/* Country / language / keyword selectors (screenshot 3 context) */}
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {/* Country / language / keyword selectors */}
+          <div className="mt-5 grid gap-4 sm:grid-cols-3">
             <Select label="Country" value={country} onChange={setCountry}
               options={COUNTRIES.map((c) => c.country)} />
             <Select label="Language" value={language} onChange={setLanguage}
               options={LANGUAGES.map((l) => l.language)} />
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slatebody">
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
                 Target keyword (optional)
               </label>
               <input value={keyword} onChange={(e) => setKeyword(e.target.value)}
                 placeholder="e.g. growth agency"
-                className="w-full rounded-lg border border-mist px-3 py-2.5 text-sm outline-none focus:border-electric" />
+                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
             </div>
           </div>
 
-          <p className="mt-4 text-center text-sm text-slatebody">
+          <p className="mt-5 text-center text-sm text-muted">
             Enter a URL and get a free website analysis — SEO, GEO &amp; AI visibility.
           </p>
           {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
@@ -115,18 +119,22 @@ function Processing({ job, url, country, language }: {
   const progress = job?.progress ?? 0;
   const stage = job?.stage ?? "Queued";
   return (
-    <div className="mt-14 flex flex-col items-center text-center">
-      <div className="spinner h-16 w-16 rounded-full border-4 border-mist border-t-electric" />
-      <div className="mt-8 w-full max-w-md">
-        <div className="h-2 w-full overflow-hidden rounded-full bg-cloud">
-          <div className="h-2 rounded-full bg-electric transition-all duration-500"
+    <div className="mt-16 flex flex-col items-center text-center">
+      <div className="relative">
+        {/* green halo behind the spinner */}
+        <div className="halo-pulse absolute -inset-6 rounded-full bg-wtgreen/25 blur-2xl" />
+        <div className="spinner relative h-16 w-16 rounded-full border-4 border-white/15 border-t-wtgreen" />
+      </div>
+      <div className="mt-10 w-full max-w-md">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="h-2 rounded-full bg-wtgreen transition-all duration-500"
             style={{ width: `${progress}%` }} />
         </div>
-        <p className="mt-3 text-sm font-semibold text-ink">{stage}…</p>
+        <p className="mt-3 text-sm font-semibold text-paper">{stage}…</p>
       </div>
-      <p className="mt-6 max-w-md text-slatebody">
+      <p className="mt-6 max-w-md text-muted">
         Come back in a few minutes — we&apos;re building insights for{" "}
-        <span className="font-bold text-ink">{prettyHost(url)}, {country}, {language}.</span>
+        <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}.</span>
       </p>
     </div>
   );
@@ -137,9 +145,9 @@ function Select({ label, value, onChange, options }: {
 }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slatebody">{label}</label>
+      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-mist bg-paper px-3 py-2.5 text-sm text-ink outline-none focus:border-electric">
+        className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition focus:border-wtgreen">
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>

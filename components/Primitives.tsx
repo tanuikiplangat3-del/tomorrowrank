@@ -5,14 +5,15 @@ import {
 } from "recharts";
 import type { Grade, CategoryScore } from "@/types/audit";
 
+// Green-forward scale for the dark canvas
 const GRADE_COLOR: Record<string, string> = {
-  A: "#3B43F5", B: "#3B43F5", C: "#7C5CFC", D: "#F4B740", F: "#EF4444",
+  A: "#4CA66B", B: "#6FC08A", C: "#9BC846", D: "#E2B340", F: "#F06A5A",
 };
 function gradeColor(g: Grade): string {
-  return GRADE_COLOR[g[0]] ?? "#3B43F5";
+  return GRADE_COLOR[g[0]] ?? "#4CA66B";
 }
 
-/** Circular grade gauge (screenshot 4 style). */
+/** Circular grade gauge. */
 export function GradeGauge({
   grade, score, size = 132, label,
 }: { grade: Grade; score: number; size?: number; label?: string }) {
@@ -27,7 +28,7 @@ export function GradeGauge({
     <div className="flex flex-col items-center gap-2">
       <div style={{ width: size, height: size }} className="relative">
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF0F6" strokeWidth={stroke} />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={stroke} />
           <circle
             cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color}
             strokeWidth={stroke} strokeLinecap="round"
@@ -35,16 +36,16 @@ export function GradeGauge({
           />
         </svg>
         <div className="absolute inset-0 grid place-items-center">
-          <span className="font-display font-extrabold text-ink"
+          <span className="font-display font-extrabold text-paper"
             style={{ fontSize: size * 0.32 }}>{grade}</span>
         </div>
       </div>
-      {label && <span className="text-sm font-semibold text-electric">{label}</span>}
+      {label && <span className="text-sm font-semibold text-wtgreen">{label}</span>}
     </div>
   );
 }
 
-/** Radar over the five headline categories (screenshot 4 right). */
+/** Radar over the five headline categories. */
 export function CategoryRadar({ categories }: { categories: CategoryScore[] }) {
   const order = ["On-Page SEO", "GEO", "Links", "Usability", "Performance"];
   const data = order.map((cat) => {
@@ -55,9 +56,9 @@ export function CategoryRadar({ categories }: { categories: CategoryScore[] }) {
     <div className="h-[260px] w-full">
       <ResponsiveContainer>
         <RadarChart data={data} outerRadius="72%">
-          <PolarGrid stroke="#E6E8F0" />
-          <PolarAngleAxis dataKey="axis" tick={{ fill: "#3A3F55", fontSize: 12, fontWeight: 600 }} />
-          <Radar dataKey="score" stroke="#3B43F5" fill="#3B43F5" fillOpacity={0.22} strokeWidth={2} />
+          <PolarGrid stroke="rgba(255,255,255,0.14)" />
+          <PolarAngleAxis dataKey="axis" tick={{ fill: "#B9C2BC", fontSize: 12, fontWeight: 600 }} />
+          <Radar dataKey="score" stroke="#4CA66B" fill="#4CA66B" fillOpacity={0.28} strokeWidth={2} />
         </RadarChart>
       </ResponsiveContainer>
     </div>
@@ -66,14 +67,14 @@ export function CategoryRadar({ categories }: { categories: CategoryScore[] }) {
 
 export function PriorityBadge({ priority }: { priority: "high" | "medium" | "low" }) {
   const map = {
-    high: "bg-red-50 text-bad",
-    medium: "bg-amber-50 text-[#C98A0E]",
-    low: "bg-green-50 text-good",
+    high: "bg-bad/15 text-bad",
+    medium: "bg-warn/15 text-warn",
+    low: "bg-good/15 text-good",
   } as const;
   const label = { high: "High Priority", medium: "Medium Priority", low: "Low Priority" }[priority];
   return <span className={`rounded-md px-2.5 py-1 text-xs font-bold ${map[priority]}`}>{label}</span>;
 }
 
 export function CategoryTag({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-md bg-cloud px-2.5 py-1 text-xs font-semibold text-slatebody">{children}</span>;
+  return <span className="rounded-md bg-white/[0.07] px-2.5 py-1 text-xs font-semibold text-muted">{children}</span>;
 }
