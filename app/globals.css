@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  color: #0A0A0A;
+  background: #FFFFFF;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hand-drawn underline accent (echoes welcometomorrow.io "Grow with Us" stroke) */
+.underline-sketch {
+  position: relative;
+  display: inline-block;
+}
+.underline-sketch::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -0.18em;
+  height: 0.32em;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 12' preserveAspectRatio='none'%3E%3Cpath d='M2 8 C 60 2, 120 10, 180 5 S 280 3, 298 7' stroke='%233B43F5' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+.underline-sun::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 12' preserveAspectRatio='none'%3E%3Cpath d='M2 8 C 60 2, 120 10, 180 5 S 280 3, 298 7' stroke='%23F4B740' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { animation: spin 0.9s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+  html { scroll-behavior: auto; }
+}
