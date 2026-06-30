@@ -7,6 +7,27 @@ import { Report } from "./Report";
 
 type Phase = "input" | "processing" | "done" | "error";
 
+// Parse a fetch Response safely. If the server crashed and returned an empty or
+// non-JSON body, surface a real message instead of "Unexpected end of JSON input".
+async function readJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) {
+    throw new Error(
+      res.ok
+        ? "The server returned an empty response."
+        : `Server error ${res.status} (${res.statusText || "no message"}).`
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Non-JSON (e.g. an HTML error page) — show a trimmed snippet.
+    throw new Error(
+      `Server error ${res.status}: ${text.slice(0, 180).replace(/\s+/g, " ").trim()}`
+    );
+  }
+}
+
 export function AuditApp() {
   const [phase, setPhase] = useState<Phase>("input");
   const [url, setUrl] = useState("");
@@ -30,16 +51,22 @@ export function AuditApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, country, language, targetKeyword: keyword }),
       });
-      const data = await res.json();
+      const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to start audit");
       const jobId = data.jobId as string;
 
       pollRef.current = setInterval(async () => {
-        const r = await fetch(`/api/audit/status?id=${jobId}`);
-        const j: AuditJob = await r.json();
-        setJob(j);
-        if (j.status === "done") { stopPoll(); setPhase("done"); }
-        if (j.status === "error") { stopPoll(); setError(j.error || "Audit failed"); setPhase("error"); }
+        try {
+          const r = await fetch(`/api/audit/status?id=${jobId}`);
+          const j: AuditJob = await readJson(r);
+          setJob(j);
+          if (j.status === "done") { stopPoll(); setPhase("done"); }
+          if (j.status === "error") { stopPoll(); setError(j.error || "Audit failed"); setPhase("error"); }
+        } catch (e: any) {
+          stopPoll();
+          setError(e.message || "Lost connection to the audit.");
+          setPhase("error");
+        }
       }, 2500);
     } catch (e: any) {
       setError(e.message);

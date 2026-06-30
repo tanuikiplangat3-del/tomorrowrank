@@ -34,3 +34,25 @@ the entry screen, the running-audit screen, and the results report.
 - `next build` succeeds and all pages render (verified in a headless browser).
 - A build-time warning about fetching `fonts.googleapis.com` only appears in network-
   restricted sandboxes; it is harmless and does not occur on Vercel.
+
+---
+
+## Update 2 — Audit reliability + diagnostics
+
+Fixes the "Unexpected end of JSON input" runtime error (a server crash that returned
+an empty body) and makes deploy issues self-diagnosing.
+
+- **lib/store/jobs.ts** — Upstash read/write wrapped in try/catch with clear,
+  actionable error messages; added `isRedisConfigured()` and `pingStore()` for health.
+- **app/api/audit/start/route.ts** — whole handler wrapped in try/catch so it ALWAYS
+  returns JSON (never an empty 500); returns a clear message when Upstash isn't set;
+  background worker now triggered via Vercel `waitUntil` for reliable delivery.
+- **app/api/audit/run/route.ts** — returns immediately and runs the audit under
+  `waitUntil`; catches pipeline errors and records them on the job.
+- **app/api/audit/health/route.ts** (new) — `GET /api/audit/health` reports which env
+  vars are present (booleans only) and whether Redis is actually reachable.
+- **components/AuditApp.tsx** — robust response parsing surfaces the real server error
+  instead of "Unexpected end of JSON input"; status polling handles failures gracefully.
+- **package.json** — added `@vercel/functions` (for `waitUntil`).
+
+See DEPLOYMENT.md for the full env-var checklist and the health-check workflow.
