@@ -48,6 +48,13 @@ export async function runAudit(job: AuditJob): Promise<void> {
   const lang = resolveLanguage(language);
   const domain = domainOf(url);
 
+  // Wall-clock budget so the job ALWAYS reaches a terminal state before Vercel
+  // kills the function. Hobby = 60s (default 50s budget); on Pro set
+  // AUDIT_BUDGET_MS=240000 and maxDuration=300 in the run route.
+  const BUDGET_MS = Number(process.env.AUDIT_BUDGET_MS) || 50_000;
+  const startedAt = Date.now();
+  const remaining = () => Math.max(0, BUDGET_MS - (Date.now() - startedAt));
+
   const set = (stage: string, progress: number) =>
     updateJob(job.id, { status: "running", stage, progress });
 
@@ -58,9 +65,10 @@ export async function runAudit(job: AuditJob): Promise<void> {
 
     // 2. PageSpeed (mobile + desktop) in parallel — free API
     await set("Measuring Core Web Vitals & PageSpeed", 22);
+    const psTimeout = Math.min(20_000, Math.max(6_000, remaining() - 25_000));
     const [mobile, desktop] = await Promise.all([
-      pageSpeed(signals.finalUrl, "mobile").catch(() => emptyPSI("mobile")),
-      pageSpeed(signals.finalUrl, "desktop").catch(() => emptyPSI("desktop")),
+      pageSpeed(signals.finalUrl, "mobile", psTimeout).catch(() => emptyPSI("mobile")),
+      pageSpeed(signals.finalUrl, "desktop", psTimeout).catch(() => emptyPSI("desktop")),
     ]);
 
     // 3. Ahrefs: keywords + backlinks + domain rating (parallel, resilient)
@@ -156,18 +164,27 @@ export async function runAudit(job: AuditJob): Promise<void> {
 
     await updateJob(job.id, { status: "running", stage: "Building AI Visibility report", progress: 80, report });
 
-    // 6. AI Visibility (multi-LLM share of voice) — heaviest step, runs last
+    // 6. AI Visibility (multi-LLM share of voice) — heaviest step, runs last.
+    // Time-boxed against the remaining budget. If it can't finish in time, we
+    // still complete the audit with the core report rather than hang forever.
     const pageText = stripTags(signals.html).slice(0, 8000);
-    const aiVisibility = await runAiVisibility(domain, country, pageText, (stage, p) =>
-      updateJob(job.id, { stage, progress: 80 + Math.round(p * 0.2) })
-    );
+    const aiBudget = remaining() - 4_000; // leave headroom to write the result
+    let aiVisibility: any = undefined;
+    if (aiBudget > 8_000) {
+      aiVisibility = await withTimeout(
+        runAiVisibility(domain, country, pageText, (stage, p) =>
+          updateJob(job.id, { stage, progress: 80 + Math.round(p * 0.2) })
+        ),
+        aiBudget
+      ).catch(() => undefined);
+    }
 
     await updateJob(job.id, {
       status: "done",
       stage: "Complete",
       progress: 100,
       report,
-      aiVisibility,
+      ...(aiVisibility ? { aiVisibility } : {}),
     });
   } catch (err: any) {
     await updateJob(job.id, {
@@ -179,6 +196,14 @@ export async function runAudit(job: AuditJob): Promise<void> {
 }
 
 // ---------- mapping helpers ----------
+// Resolve a promise, or reject after ms — used to time-box slow optional steps.
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error("step timed out")), ms)),
+  ]);
+}
+
 function val<T>(r: PromiseSettledResult<T>, fallback: T): T {
   return r.status === "fulfilled" ? r.value : fallback;
 }

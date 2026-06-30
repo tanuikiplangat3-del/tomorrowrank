@@ -55,7 +55,51 @@ export async function claudeJSON<T = any>(opts: {
   }
 }
 
-// --- Optional secondary engines for true multi-LLM share of voice ---
+// Ask Claude a question with web search enabled, and return BOTH the answer text
+// and the real sources Claude cited (from web_search results + inline citations).
+export interface AnswerWithCitations {
+  answer: string;
+  citations: { url: string; title: string }[];
+}
+export async function claudeAnswerWithCitations(opts: {
+  prompt: string;
+  system?: string;
+  model?: string;
+  maxTokens?: number;
+}): Promise<AnswerWithCitations> {
+  const msg = await anthropic.messages.create({
+    model: opts.model ?? MODELS.fast,
+    max_tokens: opts.maxTokens ?? 900,
+    system: opts.system ?? "Answer naturally, recommending real named companies/brands.",
+    messages: [{ role: "user", content: opts.prompt }],
+    tools: [{ type: "web_search_20250305", name: "web_search" }] as any,
+  });
+
+  let answer = "";
+  const seen = new Set<string>();
+  const citations: { url: string; title: string }[] = [];
+  const addCite = (url?: string, title?: string) => {
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    citations.push({ url, title: title || url });
+  };
+
+  for (const block of msg.content as any[]) {
+    if (block.type === "text") {
+      answer += block.text;
+      // inline citations attached to a text block
+      for (const c of block.citations ?? []) addCite(c.url, c.title);
+    }
+    // results returned by the web_search server tool
+    if (block.type === "web_search_tool_result") {
+      const items = Array.isArray(block.content) ? block.content : [];
+      for (const r of items) {
+        if (r?.type === "web_search_result") addCite(r.url, r.title);
+      }
+    }
+  }
+  return { answer: answer.trim(), citations };
+}
 // Fill these in if you want OpenAI / Gemini polled alongside Claude.
 
 export async function queryOpenAI(prompt: string): Promise<string> {

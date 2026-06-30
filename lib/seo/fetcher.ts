@@ -86,6 +86,58 @@ function stripTags(html: string): string {
     .trim();
 }
 
+// Decode the common HTML entities so titles/descriptions read correctly and
+// their character counts are accurate.
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;|&#0*39;|&#x0*27;/gi, "'")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&#(\d+);/g, (_, n) => safeCodePoint(parseInt(n, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => safeCodePoint(parseInt(n, 16)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function safeCodePoint(n: number): string {
+  try { return String.fromCodePoint(n); } catch { return ""; }
+}
+
+// Parse a single tag's attributes into a lowercased-key map. Order-independent,
+// handles double quotes, single quotes, and unquoted values.
+function parseAttrs(tag: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(tag))) {
+    attrs[m[1].toLowerCase()] = m[3] ?? m[4] ?? m[5] ?? "";
+  }
+  return attrs;
+}
+
+// All <meta> / <link> tags as attribute maps.
+function tagsOf(html: string, name: "meta" | "link"): Record<string, string>[] {
+  const re = new RegExp(`<${name}\\b[^>]*>`, "gi");
+  return [...html.matchAll(re)].map((m) => parseAttrs(m[0]));
+}
+
+// Find a <meta> content value by its name= or property= key (case-insensitive).
+function metaContent(
+  metas: Record<string, string>[],
+  keyMatch: (k: string) => boolean
+): string | null {
+  for (const a of metas) {
+    const id = (a.name ?? a.property ?? "").toLowerCase();
+    if (id && keyMatch(id) && a.content != null) {
+      const v = decodeEntities(a.content);
+      return v.length ? v : null;
+    }
+  }
+  return null;
+}
+
 export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   const url = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
   const res = await safeFetch(url);
@@ -153,23 +205,30 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
 
   const wordCount = stripTags(html).split(/\s+/).filter(Boolean).length;
 
+  // Order-/quote-independent tag parsing for head metadata.
+  const metas = tagsOf(html, "meta");
+  const linkTags = tagsOf(html, "link");
+  const rawTitle = textBetween(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = rawTitle ? decodeEntities(stripTags(rawTitle)) || null : null;
+  const canonical =
+    linkTags.find((a) => (a.rel ?? "").toLowerCase().split(/\s+/).includes("canonical"))
+      ?.href ?? null;
+  const hasFaviconTag = linkTags.some((a) =>
+    /(^|\s)icon(\s|$)|shortcut icon|apple-touch-icon/i.test((a.rel ?? "").toLowerCase())
+  );
+  const hreflangs = linkTags
+    .filter((a) => a.hreflang)
+    .map((a) => a.hreflang)
+    .concat([...html.matchAll(/hreflang=["']([^"']+)["']/gi)].map((m) => m[1]));
+
   return {
     finalUrl,
     status: res.status,
     html,
-    title: textBetween(html, /<title[^>]*>([\s\S]*?)<\/title>/i),
-    metaDescription: textBetween(
-      html,
-      /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i
-    ),
-    canonical: textBetween(
-      html,
-      /<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["']/i
-    ),
-    robotsMeta: textBetween(
-      html,
-      /<meta[^>]*name=["']robots["'][^>]*content=["']([^"']*)["']/i
-    ),
+    title,
+    metaDescription: metaContent(metas, (k) => k === "description"),
+    canonical,
+    robotsMeta: metaContent(metas, (k) => k === "robots"),
     h1,
     h2,
     headings: {
@@ -180,11 +239,11 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
       h6: countMatches(html, /<h6[\s>]/gi),
     },
     images: { total: imgTags.length, withAlt: withAlt.length },
-    hreflang: [...html.matchAll(/hreflang=["']([^"']+)["']/gi)].map((m) => m[1]),
+    hreflang: hreflangs,
     lang: textBetween(html, /<html[^>]*\blang=["']([^"']+)["']/i),
     wordCount,
-    hasViewport: /<meta[^>]*name=["']viewport["']/i.test(html),
-    hasFavicon: /<link[^>]*rel=["'][^"']*icon[^"']*["']/i.test(html),
+    hasViewport: metas.some((a) => (a.name ?? "").toLowerCase() === "viewport"),
+    hasFavicon: hasFaviconTag,
     hasFlash: /\.swf\b/i.test(html) || /application\/x-shockwave-flash/i.test(html),
     iframeCount: countMatches(html, /<iframe[\s>]/gi),
     inlineStyleCount: countMatches(html, /\sstyle=["']/gi),
@@ -197,8 +256,8 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
     hasGoogleAnalytics:
       /gtag\(|googletagmanager\.com|google-analytics\.com|ga\(/i.test(lower),
     hasFacebookPixel: /connect\.facebook\.net\/[^"']*fbevents\.js|fbq\(/i.test(lower),
-    ogTags: countMatches(html, /<meta[^>]*property=["']og:[^"']+["']/gi),
-    twitterCards: countMatches(html, /<meta[^>]*name=["']twitter:[^"']+["']/gi),
+    ogTags: metas.filter((a) => (a.property ?? "").toLowerCase().startsWith("og:")).length,
+    twitterCards: metas.filter((a) => (a.name ?? "").toLowerCase().startsWith("twitter:")).length,
     social: {
       facebook: findSocial(/https?:\/\/(www\.)?facebook\.com\/[^\s"'<>]+/i),
       twitter: findSocial(/https?:\/\/(www\.)?(twitter|x)\.com\/[^\s"'<>]+/i),

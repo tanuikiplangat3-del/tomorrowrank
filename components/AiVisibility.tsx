@@ -6,12 +6,15 @@ import {
 } from "recharts";
 import type { AiVisibilityReport } from "@/types/audit";
 
-const PALETTE = ["#34A863", "#7CF0A8", "#F4B740", "#EF4444", "#7C5CFC", "#C7CBD8"];
+// Green-led palette on the dark canvas; client brand is always wtgreen.
+const PALETTE = ["#4CA66B", "#9BC846", "#9B8BFF", "#E2B340", "#F06A5A", "#7E8B84"];
 
 function colorFor(i: number, isClient: boolean) {
-  if (isClient) return "#34A863";
+  if (isClient) return "#4CA66B";
   return PALETTE[(i % (PALETTE.length - 1)) + 1];
 }
+
+const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
 
 export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
   const sov = data.shareOfVoice;
@@ -30,8 +33,8 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
   return (
     <section className="mt-10">
       <div className="mb-5 flex items-baseline gap-3">
-        <h2 className="font-display text-2xl font-extrabold text-white">AI Visibility</h2>
-        <span className="text-sm font-medium text-white/70">
+        <h2 className="font-display text-2xl font-extrabold text-paper">AI Visibility</h2>
+        <span className="text-sm font-medium text-muted">
           GEO / Generative Engine Optimization · {data.modelsQueried.join(" · ") || "Claude"}
         </span>
       </div>
@@ -39,19 +42,19 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
       {/* Row 1: Insights + Bubble */}
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Insights */}
-        <div className="glass-card p-6">
-          <h3 className="font-display text-lg font-bold text-white">Insights</h3>
-          <p className="mt-1 text-sm text-white/70">AI-generated strategy based on the latest data update.</p>
+        <div className={CARD}>
+          <h3 className="font-display text-lg font-bold text-paper">Insights</h3>
+          <p className="mt-1 text-sm text-muted">AI-generated strategy based on the latest data update.</p>
           <ol className="mt-5 space-y-5">
             {data.insights.map((ins) => (
               <li key={ins.rank} className="flex gap-3">
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-violet/10 text-sm font-bold text-growLight">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-violet/20 text-sm font-bold text-violet">
                   {ins.rank}
                 </span>
                 <div>
-                  <p className="font-display font-bold text-white">{ins.title}</p>
-                  <p className="mt-0.5 text-sm text-white/70">{ins.body}</p>
-                  <span className="mt-1 inline-block text-sm font-semibold text-growLight">
+                  <p className="font-display font-bold text-paper">{ins.title}</p>
+                  <p className="mt-0.5 text-sm text-muted">{ins.body}</p>
+                  <span className="mt-1 inline-block text-sm font-semibold text-wtgreen">
                     {ins.link.label} →
                   </span>
                 </div>
@@ -61,28 +64,29 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
         </div>
 
         {/* Share of Voice vs Sentiment bubble */}
-        <div className="glass-card p-6">
-          <h3 className="font-display text-lg font-bold text-white">Share of Voice vs. Sentiment</h3>
-          <div className="mt-3 rounded-lg bg-gradient-to-r from-grow/10 to-transparent p-3">
-            <p className="text-sm font-bold text-growLight">✦ {data.headline.tag}</p>
-            <p className="text-sm text-white">{data.headline.text}</p>
+        <div className={CARD}>
+          <h3 className="font-display text-lg font-bold text-paper">Share of Voice vs. Sentiment</h3>
+          <div className="mt-3 rounded-lg bg-violet/10 p-3">
+            <p className="text-sm font-bold text-violet">✦ {data.headline.tag}</p>
+            <p className="text-sm text-paper">{data.headline.text}</p>
           </div>
           <div className="mt-4 h-[280px]">
             <ResponsiveContainer>
               <ScatterChart margin={{ top: 10, right: 16, bottom: 20, left: 0 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.12)" />
+                <CartesianGrid stroke="rgba(255,255,255,0.1)" />
                 <XAxis type="number" dataKey="x" name="Share of Voice" unit="%"
-                  domain={[0, "dataMax + 5"]} tick={{ fontSize: 11, fill: "rgba(255,255,255,0.75)" }}
-                  label={{ value: "Share of Voice (%)", position: "insideBottom", offset: -8, fontSize: 11 }} />
+                  domain={[0, "dataMax + 5"]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
+                  label={{ value: "Share of Voice (%)", position: "insideBottom", offset: -8, fontSize: 11, fill: "#B9C2BC" }} />
                 <YAxis type="number" dataKey="y" name="Sentiment" unit="%"
-                  domain={[0, 100]} tick={{ fontSize: 11, fill: "rgba(255,255,255,0.75)" }}
-                  label={{ value: "Sentiment Score (%)", angle: -90, position: "insideLeft", fontSize: 11 }} />
+                  domain={[0, 100]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
+                  label={{ value: "Sentiment Score (%)", angle: -90, position: "insideLeft", fontSize: 11, fill: "#B9C2BC" }} />
                 <ZAxis type="number" dataKey="z" range={[120, 1400]} />
                 <Tooltip cursor={{ strokeDasharray: "3 3" }}
-                  formatter={(v: any, n: any) => [`${v}${n === "Sentiment" ? "%" : "%"}`, n]} />
+                  contentStyle={{ background: "#0c0f0d", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "#fff" }}
+                  formatter={(v: any, n: any) => [`${v}%`, n]} />
                 <Scatter data={bubbleData}>
                   {bubbleData.map((b, i) => (
-                    <Cell key={i} fill={b.fill} fillOpacity={0.55} />
+                    <Cell key={i} fill={b.fill} fillOpacity={0.65} />
                   ))}
                 </Scatter>
               </ScatterChart>
@@ -94,20 +98,20 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
       {/* Row 2: Overall sentiment + Share of voice donut */}
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         {/* Overall sentiment */}
-        <div className="glass-card p-6">
-          <h3 className="font-display text-lg font-bold text-white">Overall Sentiment</h3>
+        <div className={CARD}>
+          <h3 className="font-display text-lg font-bold text-paper">Overall Sentiment</h3>
           {data.overallSentiment.hasMentions ? (
             <div className="mt-4 space-y-3">
-              <SentimentBar label="Positive" pct={data.overallSentiment.positivePct} color="#22C55E" />
-              <SentimentBar label="Neutral" pct={data.overallSentiment.neutralPct} color="#C7CBD8" />
-              <SentimentBar label="Negative" pct={data.overallSentiment.negativePct} color="#EF4444" />
-              <p className="pt-2 text-sm text-white/70">{data.overallSentiment.summary}</p>
+              <SentimentBar label="Positive" pct={data.overallSentiment.positivePct} color="#4CA66B" />
+              <SentimentBar label="Neutral" pct={data.overallSentiment.neutralPct} color="#7E8B84" />
+              <SentimentBar label="Negative" pct={data.overallSentiment.negativePct} color="#F06A5A" />
+              <p className="pt-2 text-sm text-muted">{data.overallSentiment.summary}</p>
             </div>
           ) : (
             <div className="mt-6 flex flex-col items-center text-center">
-              <div className="grid h-20 w-20 place-items-center rounded-full bg-white/10 text-3xl">☹</div>
-              <p className="mt-3 font-display font-bold text-white">No brand mentions</p>
-              <p className="mt-1 max-w-xs text-sm text-white/70">
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-white/[0.06] text-3xl">☹</div>
+              <p className="mt-3 font-display font-bold text-paper">No brand mentions</p>
+              <p className="mt-1 max-w-xs text-sm text-muted">
                 Sentiment data will appear here once your brand shows up in AI responses.
               </p>
             </div>
@@ -115,11 +119,11 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
         </div>
 
         {/* Share of voice donut */}
-        <div className="glass-card p-6">
-          <h3 className="font-display text-lg font-bold text-white">Share of Voice</h3>
-          <div className="mt-3 rounded-lg bg-gradient-to-r from-grow/10 to-transparent p-3">
-            <p className="text-sm font-bold text-growLight">✦ {data.headline.tag}</p>
-            <p className="text-sm text-white">
+        <div className={CARD}>
+          <h3 className="font-display text-lg font-bold text-paper">Share of Voice</h3>
+          <div className="mt-3 rounded-lg bg-violet/10 p-3">
+            <p className="text-sm font-bold text-violet">✦ {data.headline.tag}</p>
+            <p className="text-sm text-paper">
               You hold {client?.sharePct ?? 0}% share.{" "}
               {sov.find((s) => !s.isClient && s.brand !== "Other")
                 ? `${sov.find((s) => !s.isClient && s.brand !== "Other")!.brand} leads at ${sov.find((s) => !s.isClient && s.brand !== "Other")!.sharePct}%.`
@@ -133,7 +137,7 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
                   <Pie data={sov} dataKey="sharePct" nameKey="brand"
                     innerRadius={55} outerRadius={90} paddingAngle={1}>
                     {sov.map((s, i) => (
-                      <Cell key={i} fill={s.brand === "Other" ? "#C7CBD8" : colorFor(i, s.isClient)} />
+                      <Cell key={i} fill={s.brand === "Other" ? "#7E8B84" : colorFor(i, s.isClient)} />
                     ))}
                   </Pie>
                 </PieChart>
@@ -144,16 +148,48 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
                 <li key={i} className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
                     <span className="h-3 w-3 rounded-sm"
-                      style={{ background: s.brand === "Other" ? "#C7CBD8" : colorFor(i, s.isClient) }} />
-                    <span className={s.isClient ? "font-bold text-white" : "text-white/70"}>{s.brand}</span>
+                      style={{ background: s.brand === "Other" ? "#7E8B84" : colorFor(i, s.isClient) }} />
+                    <span className={s.isClient ? "font-bold text-paper" : "text-muted"}>{s.brand}</span>
                   </span>
-                  <span className="font-semibold text-white">{s.sharePct}%</span>
+                  <span className="font-semibold text-paper">{s.sharePct}%</span>
                 </li>
               ))}
             </ul>
           </div>
         </div>
       </div>
+
+      {/* Citations / sources the AI engines actually referenced */}
+      {data.citations && data.citations.length > 0 && (
+        <div className={`mt-5 ${CARD}`}>
+          <h3 className="font-display text-lg font-bold text-paper">
+            Citations <span className="text-sm font-medium text-muted">· sources AI engines referenced</span>
+          </h3>
+          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+            {data.citations.map((c, i) => {
+              let host = c.url;
+              try { host = new URL(c.url).hostname.replace(/^www\./, ""); } catch {}
+              return (
+                <li key={i} className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.brandCited ? "bg-wtgreen" : "bg-white/30"}`} />
+                  <div className="min-w-0">
+                    <a href={c.url} target="_blank" rel="noopener noreferrer"
+                      className="block truncate text-sm font-semibold text-paper hover:text-wtgreen">
+                      {c.title}
+                    </a>
+                    <span className="block truncate text-xs text-muted">{host}</span>
+                    {c.brandCited && (
+                      <span className="mt-1 inline-block rounded bg-wtgreen/15 px-1.5 py-0.5 text-[11px] font-bold text-wtgreen">
+                        cites your brand
+                      </span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
@@ -162,8 +198,8 @@ function SentimentBar({ label, pct, color }: { label: string; pct: number; color
   return (
     <div>
       <div className="flex justify-between text-sm">
-        <span className="text-white/70">{label}</span>
-        <span className="font-semibold text-white">{pct}%</span>
+        <span className="text-muted">{label}</span>
+        <span className="font-semibold text-paper">{pct}%</span>
       </div>
       <div className="mt-1 h-2 w-full rounded-full bg-white/10">
         <div className="h-2 rounded-full" style={{ width: `${pct}%`, background: color }} />

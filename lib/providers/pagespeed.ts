@@ -9,7 +9,8 @@ const ENDPOINT = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 
 export async function pageSpeed(
   url: string,
-  strategy: "mobile" | "desktop"
+  strategy: "mobile" | "desktop",
+  timeoutMs = 20_000
 ): Promise<PageSpeedReport> {
   const key = process.env.PAGESPEED_API_KEY;
   const params = new URLSearchParams({ url, strategy });
@@ -20,7 +21,7 @@ export async function pageSpeed(
   if (key) params.set("key", key);
 
   const res = await fetch(`${ENDPOINT}?${params.toString()}`, {
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const text = await res.text();

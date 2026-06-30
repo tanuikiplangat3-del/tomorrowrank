@@ -13,6 +13,7 @@ import type {
 } from "@/types/audit";
 import {
   claudeJSON,
+  claudeAnswerWithCitations,
   queryOpenAI,
   queryGemini,
   MODELS,
@@ -36,7 +37,7 @@ interface BrandContext {
 // When FAST_MODE is on (recommended for Vercel Hobby / 60s limit), we probe
 // fewer prompts and poll Claude-only in parallel so the whole step fits the window.
 const FAST_MODE = process.env.FAST_MODE !== "false"; // default ON
-const PROMPT_COUNT = FAST_MODE ? 3 : 6;
+const PROMPT_COUNT = FAST_MODE ? 2 : 6;
 
 // Step 1+2: derive category, competitors, and probe prompts from the site.
 async function deriveContext(
@@ -60,60 +61,63 @@ Return JSON:
  "prompts": [<${PROMPT_COUNT} natural buyer-intent questions a user would ask ChatGPT/Claude when looking for this kind of service in ${country}; do NOT mention ${brand} in the prompts>]
 }`,
     maxTokens: 1200,
-    webSearch: true,
+    webSearch: false,
   });
   return ctx;
 }
 
-// Step 3: poll each engine with each prompt. Returns raw text answers per engine.
-async function pollEngines(prompts: string[]): Promise<{ engine: string; text: string }[]> {
+// Step 3: poll each engine with each prompt. Returns raw text answers per engine
+// PLUS the real sources Claude cited via web search.
+async function pollEngines(
+  prompts: string[]
+): Promise<{ answers: { engine: string; text: string }[]; citations: { url: string; title: string }[] }> {
   const probe = prompts.slice(0, PROMPT_COUNT);
+  const citeMap = new Map<string, string>();
 
-  // In FAST_MODE, poll Claude across all prompts in parallel (much faster).
+  // In FAST_MODE, poll Claude across all prompts in parallel (much faster) and
+  // collect the web-search citations from each answer.
   if (FAST_MODE) {
     const results = await Promise.allSettled(
       probe.map((p) =>
-        claudeJSON<{ answer: string }>({
+        claudeAnswerWithCitations({
           model: MODELS.fast,
           system:
-            "Answer the user's question as you normally would, recommending real named companies/brands. Then wrap your full answer in JSON.",
-          prompt: `${p}\n\nReturn JSON: {"answer": "<your full natural recommendation answer naming specific brands>"}`,
+            "Answer the user's question as you normally would, recommending real named companies/brands with brief reasons.",
+          prompt: p,
           maxTokens: 700,
-          webSearch: true,
         })
       )
     );
-    return results
-      .filter((r): r is PromiseFulfilledResult<{ answer: string }> => r.status === "fulfilled")
-      .map((r) => ({ engine: "Claude", text: r.value.answer ?? "" }));
+    const answers = results
+      .filter((r): r is PromiseFulfilledResult<{ answer: string; citations: { url: string; title: string }[] }> => r.status === "fulfilled")
+      .map((r) => {
+        for (const c of r.value.citations) citeMap.set(c.url, c.title);
+        return { engine: "Claude", text: r.value.answer ?? "" };
+      });
+    return { answers, citations: [...citeMap].map(([url, title]) => ({ url, title })) };
   }
 
   // Full mode: Claude + optional OpenAI/Gemini, sequentially per prompt.
   const out: { engine: string; text: string }[] = [];
   for (const p of probe) {
-    // Claude (always on)
     try {
-      const r = await claudeJSON<{ answer: string }>({
+      const r = await claudeAnswerWithCitations({
         model: MODELS.fast,
-        system: "Answer the user's question as you normally would, recommending real named companies/brands. Then wrap your full answer in JSON.",
-        prompt: `${p}\n\nReturn JSON: {"answer": "<your full natural recommendation answer naming specific brands>"}`,
+        system: "Answer the user's question as you normally would, recommending real named companies/brands.",
+        prompt: p,
         maxTokens: 800,
-        webSearch: true,
       });
       out.push({ engine: "Claude", text: r.answer ?? "" });
+      for (const c of r.citations) citeMap.set(c.url, c.title);
     } catch {
       /* skip */
     }
-
-    // OpenAI (if configured)
     const oa = await queryOpenAI(p);
     if (oa) out.push({ engine: "ChatGPT", text: oa });
-
-    // Gemini (if configured)
     const gm = await queryGemini(p);
     if (gm) out.push({ engine: "Gemini", text: gm });
   }
-  return out;
+  return { answers: out, citations: [...citeMap].map(([url, title]) => ({ url, title })) };
 }
 
 // Step 4: from raw answers, compute share of voice + sentiment via Claude judge.
@@ -381,7 +385,7 @@ async function runWithClaudeOnly(
   const ctx = await deriveContext(brand, country, pageText);
 
   onStage?.("Polling AI engines for brand mentions", 40);
-  const answers = await pollEngines(ctx.prompts);
+  const { answers, citations } = await pollEngines(ctx.prompts);
 
   onStage?.("Scoring share of voice & sentiment", 70);
   const { shares, sentiment } = await computeShareAndSentiment(brand, ctx.competitors, answers);
@@ -390,6 +394,15 @@ async function runWithClaudeOnly(
   const { insights, headline } = await buildInsights(brand, country, shares);
 
   const engines = Array.from(new Set(answers.map((a) => a.engine)));
+  const brandStem = brand.toLowerCase().split(".")[0];
+  const markedCitations = citations
+    .slice(0, 30)
+    .map((c) => ({
+      ...c,
+      brandCited:
+        c.url.toLowerCase().includes(brandStem) ||
+        c.title.toLowerCase().includes(brandStem),
+    }));
 
   return {
     clientBrand: brand,
@@ -399,6 +412,7 @@ async function runWithClaudeOnly(
     headline,
     insights,
     modelsQueried: engines.length ? engines : ["Claude"],
+    citations: markedCitations,
   };
 }
 

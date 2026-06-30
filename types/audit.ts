@@ -139,6 +139,7 @@ export interface AiVisibilityReport {
   headline: { tag: string; text: string };  // the purple "Leaders own sentiment" callout
   insights: VisibilityInsight[];
   modelsQueried: string[];     // which LLMs were polled
+  citations?: { url: string; title: string; brandCited?: boolean }[]; // sources Claude cited via web search
 }
 
 // ---- Top-level report ----
