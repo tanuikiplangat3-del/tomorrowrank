@@ -1,5 +1,6 @@
 "use client";
 import { Report } from "@/components/Report";
+import { GridBackground } from "@/components/GridBackground";
 import type { AuditReport, AiVisibilityReport } from "@/types/audit";
 
 const report: AuditReport = {
@@ -89,5 +90,10 @@ const ai: AiVisibilityReport = {
 };
 
 export default function Preview() {
-  return <main className="relative z-10 min-h-screen"><Report report={report} ai={ai} /></main>;
+  return (
+    <main className="relative min-h-screen text-white">
+      <GridBackground />
+      <Report report={report} ai={ai} />
+    </main>
+  );
 }

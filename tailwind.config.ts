@@ -8,22 +8,23 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Welcome Tomorrow dark hero palette (screenshot 2)
-        ink: "#000000",          // pure-black canvas
-        wtgreen: "#4CA66B",      // primary CTA green (sampled rgb 76,166,107)
-        wtgreenDeep: "#3E9059",  // CTA hover
-        wtglow: "#9BC846",       // olive-green edge glow / accents
-        paper: "#FFFFFF",        // white text on dark
-        muted: "#B9C2BC",        // muted light-grey body text on dark
-        // Glass surfaces that let the warped grid show through
-        glass: "rgba(255,255,255,0.045)",
-        glassStrong: "rgba(255,255,255,0.07)",
-        glassBorder: "rgba(255,255,255,0.12)",
-        // Status colours
-        good: "#4CA66B",
-        warn: "#E2B340",
-        bad: "#F06A5A",
-        violet: "#9B8BFF",       // AI-visibility accent on dark
+        // Extracted from welcometomorrow.io (screenshot 1)
+        ink: "#0A0A0A",        // near-black hero / nav
+        electric: "#3B43F5",   // primary electric blue (headings / CTA accent)
+        electricDeep: "#2E36E0",
+        sun: "#F4B740",        // warm yellow accent (audit underline / GEO)
+        paper: "#FFFFFF",
+        cloud: "#F4F5F9",      // light section background
+        mist: "#E6E8F0",       // borders
+        slatebody: "#3A3F55",  // body text
+        good: "#22C55E",
+        warn: "#F4B740",
+        bad: "#EF4444",
+        violet: "#7C5CFC",     // AI-visibility accent (screenshots 6/7)
+        // Welcome Tomorrow hero greens (screenshot 2)
+        grow: "#34A863",       // primary green button
+        growDeep: "#2A8E52",
+        growLight: "#7CF0A8",
       },
       fontFamily: {
         display: ["var(--font-display)", "system-ui", "sans-serif"],
@@ -33,8 +34,7 @@ const config: Config = {
         xl2: "1.25rem",
       },
       boxShadow: {
-        card: "0 1px 2px rgba(0,0,0,0.4), 0 18px 48px rgba(0,0,0,0.45)",
-        glow: "0 0 0 1px rgba(76,166,107,0.4), 0 12px 40px rgba(76,166,107,0.25)",
+        card: "0 1px 3px rgba(10,10,10,0.06), 0 8px 24px rgba(10,10,10,0.04)",
       },
     },
   },

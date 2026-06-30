@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Background } from "@/components/Background";
 
 export const metadata: Metadata = {
   title: "TomorrowRank — SEO & AI Visibility Audit Tool",
@@ -24,11 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="font-body antialiased text-paper">
-        {/* Brand canvas: warped green grid + edge glow, fixed behind everything */}
-        <Background />
-        {children}
-      </body>
+      <body className="font-body antialiased">{children}</body>
     </html>
   );
 }
