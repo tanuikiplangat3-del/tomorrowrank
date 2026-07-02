@@ -64,6 +64,35 @@ const report: AuditReport = {
     aiOverviewCitations:[{query:"best growth agency kenya",cited:false,competitorsCited:["speero.com","growthcurve.com"]}],
     googleAiSearchPresence:false,
   },
+  crawlMeta: { source:"sitemap", discovered:63, crawled:50, truncated:true, score:71, grade:"C", checkedCount:19, notCheckedCount:4 },
+  siteIssues: [
+    { id:"title-missing", category:"Content", subcategory:"Optimization", title:"Pages missing a <title> tag", status:"checked", priority:1,
+      affected:[{url:"https://welcometomorrow.io/blog/draft",evidence:"No <title> found"}], passedCount:49,
+      recommendation:"Add a unique, descriptive <title> (30–60 chars) with the page's primary keyword near the front.", actions:["add","contact_dev"] },
+    { id:"desc-missing", category:"Content", subcategory:"Optimization", title:"Pages missing a meta description", status:"checked", priority:3,
+      affected:[
+        {url:"https://welcometomorrow.io/services/seo",evidence:"No meta description"},
+        {url:"https://welcometomorrow.io/services/ppc",evidence:"No meta description"},
+        {url:"https://welcometomorrow.io/about",evidence:"No meta description"},
+      ], passedCount:47,
+      recommendation:"Add a unique meta description (70–160 chars) that summarizes the page and earns the click.", actions:["add","content_specialist"] },
+    { id:"h1-multiple", category:"Content", subcategory:"Optimization", title:"Pages with multiple H1s", status:"checked", priority:5,
+      affected:[{url:"https://welcometomorrow.io/",evidence:"2 H1s: Welcome Tomorrow | We build growth"}], passedCount:49,
+      recommendation:"Keep a single H1 per page; demote the rest to H2/H3.", actions:["fix","contact_dev"] },
+    { id:"faq-missing", category:"AI", subcategory:"Technical", title:"Key pages without FAQ content or FAQ schema", status:"checked", priority:5,
+      affected:[
+        {url:"https://welcometomorrow.io/services/seo",evidence:"No FAQ section or FAQPage schema detected"},
+        {url:"https://welcometomorrow.io/services/ppc",evidence:"No FAQ section or FAQPage schema detected"},
+      ], passedCount:48,
+      recommendation:"Add a genuine FAQ section (with FAQPage schema) answering real buyer questions — strong for AI answers.", actions:["add","content_specialist"] },
+    { id:"schema-missing", category:"Technical", subcategory:"SERP-features", title:"Pages without any structured data (JSON-LD)", status:"checked", priority:7,
+      affected:[{url:"https://welcometomorrow.io/contact",evidence:"No JSON-LD schema"}], passedCount:49,
+      recommendation:"Add relevant schema (Organization, Breadcrumb, Product, FAQ, Article) where justified.", actions:["add","contact_dev"] },
+    { id:"gsc-indexation", category:"Technical", subcategory:"Indexation", title:"Indexation status & coverage errors", status:"not_checked", priority:5,
+      affected:[], passedCount:0, recommendation:"", actions:[], reason:"Requires Google Search Console access (connect GSC to verify)." },
+    { id:"ai-overview-presence", category:"AI", subcategory:"AI-Overview", title:"Presence in ChatGPT / Gemini / Perplexity answers", status:"not_checked", priority:5,
+      affected:[], passedCount:0, recommendation:"", actions:[], reason:"Requires a SERP/LLM-answer data source (e.g. DataForSEO) for verified data." },
+  ],
 };
 
 const ai: AiVisibilityReport = {

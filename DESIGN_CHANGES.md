@@ -120,3 +120,53 @@ Requested: if the domain is a verified Ahrefs project → use Ahrefs Site Audit;
 in-app crawler covering 50+ pages. This is designed but NOT in this build because a
 50+ page crawl cannot run in a 60s Hobby function — it requires Vercel **Pro**
 (maxDuration 300) or a queued multi-invocation crawl. See chat for the plan.
+
+---
+
+## Update 5 — Foundation for the multi-page crawler (per-page analyzer)
+
+Added `lib/crawl/analyzer.ts`: a tested, data-backed per-page analyzer that extracts
+real facts from each crawled page (no guessing) aligned to the Welcome Tomorrow audit
+rubric (Tech + Content tabs): decoded title + length, meta description + length,
+canonical + self-reference, robots/noindex, H1s (count + text), H2 outline, word count /
+thin-content, viewport, favicon, OG/Twitter counts, JSON-LD @types (incl. @graph),
+FAQ / Breadcrumb / Article schema, FAQ-by-content heuristic, image alt coverage,
+internal vs external links, empty anchors, hreflang.
+
+This is the foundation the crawler + hybrid + clickable drill-down report build on.
+Not yet wired into the live audit flow — see chat for the plan and the two decisions
+needed (Vercel Pro vs Hobby crawl architecture; connect Google Search Console).
+
+---
+
+## Update 6 — Multi-page crawler + Ahrefs hybrid + clickable drill-down report
+
+Built the multi-page audit on the tested analyzer foundation.
+
+- **lib/crawl/crawler.ts** — crawls up to `CRAWL_MAX_PAGES` (default 50) starting from
+  the homepage: discovers URLs via sitemap.xml / robots.txt sitemaps, else BFS of
+  internal links; limited concurrency; budget-aware so the audit always finishes.
+- **lib/crawl/issues.ts** — maps crawled facts to the Welcome Tomorrow rubric (Tech +
+  Content tabs) as prioritized issues (your 1–9 scale), each recording EVERY affected
+  URL with first-hand evidence + a recommendation + action chips. Checks that need GSC
+  or a SERP/LLM data source are emitted as "not_checked" with a reason — never faked.
+  `scoreFromIssues()` rolls them into a weighted score/grade.
+- **lib/providers/ahrefs-siteaudit.ts** — hybrid routing: if the domain is a verified
+  Ahrefs Site Audit project, use Ahrefs' crawl; otherwise the in-app crawler. Defensive
+  (any failure falls back to the crawler).
+- **components/SiteIssues.tsx** — clickable report: each issue expands to list every
+  affected URL + evidence, then recommendation + actions (Fix / Add / Remove / Contact
+  developer / SEO or content specialist). Passed + not-checked shown separately.
+- **types/audit.ts** — added `SiteIssue`, `CrawlMeta`, and `report.siteIssues` / `crawlMeta`.
+- **lib/orchestrator.ts** — runs the hybrid crawl (time-boxed) and attaches results.
+
+### Deploy notes
+- On **Vercel Pro**: set `maxDuration=300` in `app/api/audit/run/route.ts`,
+  `AUDIT_BUDGET_MS=240000`, and `CRAWL_MAX_PAGES=50`. On Hobby the crawl is skipped when
+  the 60s budget can't accommodate it (core report still completes).
+
+### Still needs live data to finish (honest)
+- Ahrefs Site Audit per-URL detail + the exact field mapping is best-effort until pointed
+  at a real verified project.
+- H1-matches-service, content quality/E-E-A-T, semantic depth, AI-Overview presence still
+  need the Claude-judgment layer / DataForSEO to be fully data-backed.

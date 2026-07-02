@@ -142,6 +142,33 @@ export interface AiVisibilityReport {
   citations?: { url: string; title: string; brandCited?: boolean }[]; // sources Claude cited via web search
 }
 
+// ---- Multi-page crawl / clickable issues ----
+export type IssueStatus = "checked" | "ok" | "not_checked" | "not_relevant";
+export interface AffectedUrl { url: string; evidence: string; }
+export interface SiteIssue {
+  id: string;
+  category: "Technical" | "Content" | "Links" | "AI";
+  subcategory: string;
+  title: string;
+  status: IssueStatus;
+  priority: number; // 1 (very high) … 9 (very low)
+  affected: AffectedUrl[];
+  passedCount: number;
+  recommendation: string;
+  actions: string[];
+  reason?: string;
+}
+export interface CrawlMeta {
+  source: "sitemap" | "crawl" | "mixed" | "ahrefs-siteaudit";
+  discovered: number;
+  crawled: number;
+  truncated: boolean;
+  score: number;
+  grade: string;
+  checkedCount: number;
+  notCheckedCount: number;
+}
+
 // ---- Top-level report ----
 
 export interface AuditMeta {
@@ -181,6 +208,8 @@ export interface AuditReport {
   };
   performance: { mobile: PageSpeedReport; desktop: PageSpeedReport };
   geo: GeoReport;
+  siteIssues?: SiteIssue[];   // multi-page crawl findings (clickable drill-down)
+  crawlMeta?: CrawlMeta;
 }
 
 // ---- Job lifecycle (polling pattern) ----

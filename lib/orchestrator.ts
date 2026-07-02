@@ -28,6 +28,9 @@ import {
   buildRecommendations,
 } from "@/lib/seo/scoring";
 import { runAiVisibility } from "@/lib/ai-visibility/engine";
+import { crawlSite } from "@/lib/crawl/crawler";
+import { buildSiteIssues, scoreFromIssues } from "@/lib/crawl/issues";
+import { findSiteAuditProject, ahrefsSiteAuditIssues } from "@/lib/providers/ahrefs-siteaudit";
 import { resolveLocation, resolveLanguage } from "@/lib/locations";
 
 function domainOf(url: string): string {
@@ -123,6 +126,45 @@ export async function runAudit(job: AuditJob): Promise<void> {
     const overall = overallScore(categories);
     const recommendations = buildRecommendations(checks);
 
+    // 5b. Multi-page crawl → clickable site issues (time-boxed).
+    // On Vercel Pro set AUDIT_BUDGET_MS=240000, maxDuration=300, CRAWL_MAX_PAGES=50.
+    let siteIssues: ReturnType<typeof buildSiteIssues> | undefined;
+    let crawlMeta: any | undefined;
+    const crawlBudget = remaining() - 20_000; // reserve time for AI visibility + save
+    if (crawlBudget > 12_000) {
+      await set("Crawling site & analysing pages", 66);
+      try {
+        // Hybrid: if this domain is a verified Ahrefs Site Audit project, use
+        // Ahrefs' own crawl; otherwise crawl in-app.
+        const project = await findSiteAuditProject(domain).catch(() => null);
+        if (project) {
+          const ahrefsIssues = await ahrefsSiteAuditIssues(project.projectId).catch(() => null);
+          if (ahrefsIssues && ahrefsIssues.length) {
+            siteIssues = ahrefsIssues;
+            const sc = scoreFromIssues(siteIssues);
+            crawlMeta = {
+              source: "ahrefs-siteaudit", discovered: ahrefsIssues.length, crawled: 0,
+              truncated: false, score: sc.score, grade: sc.grade,
+              checkedCount: sc.checkedCount, notCheckedCount: sc.notCheckedCount,
+            };
+          }
+        }
+        if (!siteIssues) {
+          const crawl = await withTimeout(
+            crawlSite(signals.finalUrl, { deadlineMs: crawlBudget }),
+            crawlBudget
+          );
+          siteIssues = buildSiteIssues(crawl.pages);
+          const sc = scoreFromIssues(siteIssues);
+          crawlMeta = {
+            source: crawl.source, discovered: crawl.discovered, crawled: crawl.crawled,
+            truncated: crawl.truncated, score: sc.score, grade: sc.grade,
+            checkedCount: sc.checkedCount, notCheckedCount: sc.notCheckedCount,
+          };
+        }
+      } catch { /* crawl skipped; core report still completes */ }
+    }
+
     const report: AuditReport = {
       meta: {
         url,
@@ -160,6 +202,8 @@ export async function runAudit(job: AuditJob): Promise<void> {
       },
       performance: { mobile, desktop },
       geo,
+      ...(siteIssues ? { siteIssues } : {}),
+      ...(crawlMeta ? { crawlMeta } : {}),
     };
 
     await updateJob(job.id, { status: "running", stage: "Building AI Visibility report", progress: 80, report });

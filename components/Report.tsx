@@ -3,6 +3,7 @@
 import type { AuditReport, AiVisibilityReport, CheckResult } from "@/types/audit";
 import { GradeGauge, CategoryRadar, PriorityBadge, CategoryTag } from "./Primitives";
 import { AiVisibilitySection } from "./AiVisibility";
+import { SiteIssues } from "./SiteIssues";
 
 const HEADLINE_CATS = ["On-Page SEO", "GEO", "Links", "Usability", "Performance"] as const;
 
@@ -75,6 +76,11 @@ export function Report({
           )}
         </div>
       </section>
+
+      {/* Multi-page crawl: clickable site issues */}
+      {report.siteIssues && report.siteIssues.length > 0 && (
+        <SiteIssues issues={report.siteIssues} meta={report.crawlMeta} />
+      )}
 
       {/* Recommendations table */}
       <section className={`mt-6 ${CARD}`}>
