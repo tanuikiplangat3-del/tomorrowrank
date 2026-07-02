@@ -228,3 +228,11 @@ Add `RUN_AUDIT_INLINE=true` in Render to guarantee in-process execution.
   hover rendered dark-on-dark (invisible). The new dropdown is scrollable, searchable
   (type to find your country), and shows clear hover/selection — white text on green.
   Used for both Country (searchable) and Language.
+
+---
+
+## Update 10 — Fix AI Visibility bubble tooltip readability
+
+- Tooltip text is now **white** (`labelStyle`/`itemStyle` = #fff) — was dark-on-dark and unreadable.
+- Fixed **double percent** ("54%%") — axes no longer add `unit="%"` on top of the formatter; ticks keep `%` via tickFormatter.
+- Hid the internal bubble-size value that was showing as a stray "z : 648%".

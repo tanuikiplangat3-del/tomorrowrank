@@ -64,17 +64,24 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
             <ResponsiveContainer>
               <ScatterChart margin={{ top: 10, right: 16, bottom: 20, left: 0 }}>
                 <CartesianGrid stroke="rgba(255,255,255,0.1)" />
-                <XAxis type="number" dataKey="x" name="Share of Voice" unit="%"
+                <XAxis type="number" dataKey="x" name="Share of Voice"
                   domain={[0, "dataMax + 5"]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
+                  tickFormatter={(t: any) => `${t}%`}
                   label={{ value: "Share of Voice (%)", position: "insideBottom", offset: -8, fontSize: 11, fill: "#B9C2BC" }} />
-                <YAxis type="number" dataKey="y" name="Sentiment" unit="%"
+                <YAxis type="number" dataKey="y" name="Sentiment"
                   domain={[0, 100]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
+                  tickFormatter={(t: any) => `${t}%`}
                   label={{ value: "Sentiment Score (%)", angle: -90, position: "insideLeft", fontSize: 11, fill: "#B9C2BC" }} />
-                <ZAxis type="number" dataKey="z" range={[120, 1400]} />
+                <ZAxis type="number" dataKey="z" range={[120, 1400]} name="size" />
                 <Tooltip cursor={{ strokeDasharray: "3 3" }}
-                  contentStyle={{ background: "#0c0f0d", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "#fff" }}
-                  formatter={(v: any, n: any) => [`${v}%`, n]} />
-                <Scatter data={bubbleData}>
+                  contentStyle={{ background: "#0c0f0d", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8 }}
+                  labelStyle={{ color: "#ffffff" }}
+                  itemStyle={{ color: "#ffffff" }}
+                  formatter={(v: any, n: any) => {
+                    if (n === "size") return [null, null]; // hide internal bubble-size value
+                    return [`${v}%`, n];
+                  }} />
+                <Scatter data={bubbleData} name="Brand">
                   {bubbleData.map((b, i) => (
                     <Cell key={i} fill={b.fill} fillOpacity={0.65} />
                   ))}
