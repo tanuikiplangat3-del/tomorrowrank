@@ -250,7 +250,7 @@ async function runWithDataForSeo(
   onStage?.("Reading real AI Overview & ChatGPT mentions", 35);
   let mentions: LlmMentionRow[] = [];
   try {
-    mentions = await searchMentions(brand, loc.locationCode, "English", "google", 50);
+    mentions = await searchMentions(brand, loc.locationCode ?? 2840, "English", "google", 50);
   } catch {
     /* brand may simply have no mentions yet */
   }
@@ -260,7 +260,7 @@ async function runWithDataForSeo(
   const brands = [brand, ...ctx.competitors];
   let cross: Awaited<ReturnType<typeof crossAggregatedMetrics>> = [];
   try {
-    cross = await crossAggregatedMetrics(brands, loc.locationCode, "English", "google");
+    cross = await crossAggregatedMetrics(brands, loc.locationCode ?? 2840, "English", "google");
   } catch {
     /* fall through to deriving shares from `mentions` + top domains */
   }
@@ -268,7 +268,7 @@ async function runWithDataForSeo(
   // If cross-agg came back empty, derive competitor mentions from top domains
   // for the brand's main prompts.
   if (cross.length === 0 && ctx.prompts.length) {
-    const td = await topDomainsForKeyword(ctx.prompts[0], loc.locationCode, "English", "google", 10);
+    const td = await topDomainsForKeyword(ctx.prompts[0], loc.locationCode ?? 2840, "English", "google", 10);
     cross = td.map((d) => ({
       target: d.domain,
       mentions: d.mentions,

@@ -7,7 +7,7 @@ import { getJob, updateJob } from "@/lib/store/jobs";
 import { runAudit } from "@/lib/orchestrator";
 
 export const runtime = "nodejs";
-export const maxDuration = 60; // Vercel Hobby cap. Raise to 300 on Pro.
+export const maxDuration = 300; // long crawls; Render ignores, Vercel Pro honors
 
 export async function POST(req: NextRequest) {
   try {

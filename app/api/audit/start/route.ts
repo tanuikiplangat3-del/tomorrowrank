@@ -4,9 +4,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { waitUntil } from "@vercel/functions";
 import type { AuditJob } from "@/types/audit";
-import { saveJob, isRedisConfigured } from "@/lib/store/jobs";
+import { saveJob, updateJob, isRedisConfigured } from "@/lib/store/jobs";
 
 export const runtime = "nodejs";
+
+// On a long-lived server (Render, a VPS, `next start`) we run the audit in the
+// same process — no fragile self-HTTP call, which is what caused jobs to sit at
+// "Queued" and made cold starts feel stuck. Render sets RENDER=true; you can
+// also force it with RUN_AUDIT_INLINE=true.
+function shouldRunInline(): boolean {
+  return !!process.env.RENDER || process.env.RUN_AUDIT_INLINE === "true";
+}
 
 function baseUrl(req: NextRequest): string {
   // Prefer an explicit public URL; fall back to request origin.
@@ -58,17 +66,30 @@ export async function POST(req: NextRequest) {
 
     await saveJob(job); // throws a clear message if Redis creds are wrong
 
-    // Trigger the background worker. waitUntil keeps the function alive long
-    // enough to actually deliver the request on Vercel serverless.
-    const trigger = fetch(`${baseUrl(req)}/api/audit/run`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-internal-secret": process.env.INTERNAL_SECRET || "",
-      },
-      body: JSON.stringify({ jobId: job.id }),
-    }).catch(() => {});
-    waitUntil(trigger);
+    if (shouldRunInline()) {
+      // Long-lived server: run in-process (background). The process stays alive,
+      // so the promise keeps running after we return the jobId.
+      const { runAudit } = await import("@/lib/orchestrator");
+      void runAudit(job).catch((e) =>
+        updateJob(job.id, {
+          status: "error",
+          stage: "Failed",
+          error: e?.message ?? "Audit crashed.",
+        })
+      );
+    } else {
+      // Serverless (Vercel): trigger the background worker over HTTP.
+      // waitUntil keeps the function alive long enough to deliver the request.
+      const trigger = fetch(`${baseUrl(req)}/api/audit/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-internal-secret": process.env.INTERNAL_SECRET || "",
+        },
+        body: JSON.stringify({ jobId: job.id }),
+      }).catch(() => {});
+      waitUntil(trigger);
+    }
 
     return NextResponse.json({ jobId: job.id });
   } catch (err: any) {

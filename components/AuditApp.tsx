@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuditJob } from "@/types/audit";
 import { COUNTRIES, LANGUAGES } from "@/lib/locations";
+import { SearchableSelect } from "./SearchableSelect";
 import { Report } from "./Report";
 
 type Phase = "input" | "processing" | "done" | "error";
@@ -114,10 +115,10 @@ export function AuditApp() {
 
           {/* Country / language / keyword selectors */}
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
-            <Select label="Country" value={country} onChange={setCountry}
-              options={COUNTRIES.map((c) => c.country)} />
-            <Select label="Language" value={language} onChange={setLanguage}
-              options={LANGUAGES.map((l) => l.language)} />
+            <SearchableSelect label="Country" value={country} onChange={setCountry}
+              options={COUNTRIES.map((c) => c.country)} placeholder="Search your country…" />
+            <SearchableSelect label="Language" value={language} onChange={setLanguage}
+              options={LANGUAGES.map((l) => l.language)} searchable={false} placeholder="Select language" />
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
                 Target keyword (optional)
@@ -144,7 +145,14 @@ function Processing({ job, url, country, language }: {
   job: AuditJob | null; url: string; country: string; language: string;
 }) {
   const progress = job?.progress ?? 0;
-  const stage = job?.stage ?? "Queued";
+  const stage = job?.stage ?? "Starting";
+  // Track how long we've been waiting so we can reassure during a cold start.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const waking = (!job || job.status === "queued") && elapsed > 6;
   return (
     <div className="mt-16 flex flex-col items-center text-center">
       <div className="relative">
@@ -155,12 +163,17 @@ function Processing({ job, url, country, language }: {
       <div className="mt-10 w-full max-w-md">
         <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
           <div className="h-2 rounded-full bg-wtgreen transition-all duration-500"
-            style={{ width: `${progress}%` }} />
+            style={{ width: `${Math.max(progress, waking ? 5 : 0)}%` }} />
         </div>
         <p className="mt-3 text-sm font-semibold text-paper">{stage}…</p>
+        {waking && (
+          <p className="mt-2 text-xs text-muted">
+            Waking the server (free tier can take up to ~1 min on first run) — then crawling up to 50 pages.
+          </p>
+        )}
       </div>
       <p className="mt-6 max-w-md text-muted">
-        Come back in a few minutes — we&apos;re building insights for{" "}
+        Hang tight — we&apos;re crawling and building insights for{" "}
         <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}.</span>
       </p>
     </div>

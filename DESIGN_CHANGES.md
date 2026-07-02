@@ -195,3 +195,36 @@ Fixes for the first live audit (welcometomorrow.io) which showed false data.
 Cloudflare-protected / JS-rendered sites may still not be fully readable by a static
 fetch — the crawler now says so honestly instead of inventing findings. Full fix =
 headless-browser rendering (planned as a separate follow-up).
+
+---
+
+## Update 8 — Fix "stuck at Queued" + slow start (Render)
+
+Root cause: the app used a Vercel-style self-HTTP call (`/start` → `/api/audit/run`)
+with `waitUntil`. That's right for Vercel serverless but fragile on an always-on
+server like Render — on a cold start the internal call must wake the service, which
+left jobs sitting at "Queued" and made starts feel stuck.
+
+- **In-process execution on long-lived servers.** When `RENDER=true` (Render sets this)
+  or `RUN_AUDIT_INLINE=true`, `/start` now runs `runAudit()` directly in the same
+  process — no self-HTTP call. The Vercel HTTP-trigger path is kept for serverless.
+- **maxDuration raised to 300** on the run route (Render ignores it; Vercel Pro honors).
+- **Cold-start-aware UI.** The progress screen now shows "Waking the server (free tier
+  can take up to ~1 min)…" instead of a silent "Queued", and nudges the bar so it never
+  looks frozen.
+
+### Recommended env var
+Add `RUN_AUDIT_INLINE=true` in Render to guarantee in-process execution.
+
+---
+
+## Update 9 — Searchable country selector + visible dropdown hover
+
+- **All 196 countries**, sorted with common ones (Kenya, US, UK, Nigeria, South Africa,
+  Ghana, Tanzania, Uganda) pinned to the top. `locationCode` is now optional; countries
+  without a DataForSEO code still work for crawl + AI-visibility (which use the country
+  name). DataForSEO calls fall back to a default code where unmapped.
+- **New `components/SearchableSelect.tsx`** replaces the native `<select>`, whose option
+  hover rendered dark-on-dark (invisible). The new dropdown is scrollable, searchable
+  (type to find your country), and shows clear hover/selection — white text on green.
+  Used for both Country (searchable) and Language.
