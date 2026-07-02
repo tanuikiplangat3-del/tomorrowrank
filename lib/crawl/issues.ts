@@ -17,12 +17,13 @@ export type ActionKind = "fix" | "add" | "remove" | "contact_dev" | "seo_special
 
 const P = { VERY_HIGH: 1 as Priority, HIGH: 3 as Priority, MEDIUM: 5 as Priority, LOW: 7 as Priority, VERY_LOW: 9 as Priority };
 
-// only judge indexable, real HTML pages for content checks
-const indexable = (p: PageFacts) => p.ok && !p.noindex;
+// only judge indexable, real, READABLE HTML pages for content checks
+const indexable = (p: PageFacts) => p.ok && !p.blocked && !p.noindex;
 
 export function buildSiteIssues(pages: PageFacts[]): SiteIssue[] {
   const issues: SiteIssue[] = [];
-  const real = pages.filter((p) => p.ok);
+  const blocked = pages.filter((p) => p.blocked);
+  const real = pages.filter((p) => p.ok && !p.blocked);
   const idx = pages.filter(indexable);
   const n = idx.length || 1;
 
@@ -32,6 +33,26 @@ export function buildSiteIssues(pages: PageFacts[]): SiteIssue[] {
     const { total, ...rest } = partial;
     issues.push({ ...rest, passedCount: Math.max(0, total - partial.affected.length) });
   };
+
+  // ---------- BLOCKED / UNREADABLE PAGES (honest, no fake findings) ----------
+  if (blocked.length > 0) {
+    issues.push({
+      id: "blocked-pages", category: "Technical", subcategory: "Crawlability",
+      title: "Pages could not be read (bot protection / 403 / JS challenge)",
+      status: "checked", priority: 2,
+      affected: blocked.map((p) => ({
+        url: p.url,
+        evidence: p.status === 403 ? "HTTP 403 — blocked by WAF/Cloudflare" : `Bot-challenge or protected page (status ${p.status || "?"})`,
+      })),
+      passedCount: real.length,
+      recommendation:
+        "The site (or these pages) blocked the crawler, so their content could not be analysed. " +
+        "Allowlist the audit crawler, or note the site is JavaScript-rendered/Cloudflare-protected. " +
+        "Findings below are based only on pages we could actually read.",
+      actions: ["contact_dev", "seo_specialist"],
+      reason: "No content-level findings are reported for these pages (we won't guess).",
+    });
+  }
 
   // ---------- CONTENT / ON-PAGE (crawl-measurable) ----------
 
@@ -144,7 +165,7 @@ export function buildSiteIssues(pages: PageFacts[]): SiteIssue[] {
   push({
     id: "status-errors", category: "Technical", subcategory: "Status codes",
     title: "Pages returning errors or redirects", status: "checked", priority: P.HIGH,
-    affected: pages.filter((p) => p.status && (p.status >= 400 || p.status === 0))
+    affected: pages.filter((p) => !p.blocked && p.status && (p.status >= 400 || p.status === 0))
       .map((p) => ({ url: p.url, evidence: p.status === 0 ? "Fetch failed / timeout" : `HTTP ${p.status}` })),
     total: pages.length,
     recommendation: "Fix or redirect broken URLs; ensure important pages return HTTP 200.",
@@ -163,7 +184,7 @@ export function buildSiteIssues(pages: PageFacts[]): SiteIssue[] {
   push({
     id: "noindex", category: "Technical", subcategory: "Indexation",
     title: "Pages set to noindex", status: "checked", priority: P.VERY_HIGH,
-    affected: pages.filter((p) => p.noindex).map((p) => ({ url: p.url, evidence: `robots meta: ${p.robotsMeta}` })),
+    affected: real.filter((p) => p.noindex).map((p) => ({ url: p.url, evidence: `robots meta: ${p.robotsMeta}` })),
     total: pages.length,
     recommendation: "Confirm these pages should be excluded from search; remove noindex if they should rank.",
     actions: ["remove", "contact_dev"],

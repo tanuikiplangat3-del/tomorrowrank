@@ -170,3 +170,28 @@ Built the multi-page audit on the tested analyzer foundation.
   at a real verified project.
 - H1-matches-service, content quality/E-E-A-T, semantic depth, AI-Overview presence still
   need the Claude-judgment layer / DataForSEO to be fully data-backed.
+
+---
+
+## Update 7 — Fix false crawl results + clickable AI insights
+
+Fixes for the first live audit (welcometomorrow.io) which showed false data.
+
+1. **Only 1 page crawled → now follows the sitemap index.** `discoverFromSitemaps`
+   rewritten to read robots.txt sitemaps, detect `<sitemapindex>`, and follow child
+   sitemaps (bounded to 30 sitemaps / 200 URLs) to build the real page list.
+2. **False "noindex" / 403 findings removed.** The site is Cloudflare-protected and
+   was serving a 403/bot-challenge page whose meta contained noindex. Added
+   `looksBlocked()` + a `blocked` flag on every page. Blocked pages are excluded from
+   ALL content/meta/noindex/status checks and instead reported honestly as
+   "Pages could not be read (bot protection / 403 / JS challenge)" — no invented issues.
+   Fetch now uses a real browser User-Agent + headers to reduce false 403s.
+3. **AI Visibility insights are now clickable.** Each insight expands to show the real
+   probes behind it: the exact prompt sent to each engine, the AI's answer, whether the
+   brand was mentioned, and the sources the AI cited. Added `probes` to
+   `AiVisibilityReport` and threaded prompt→answer pairing through the engine.
+
+### Known limitation (still)
+Cloudflare-protected / JS-rendered sites may still not be fully readable by a static
+fetch — the crawler now says so honestly instead of inventing findings. Full fix =
+headless-browser rendering (planned as a separate follow-up).

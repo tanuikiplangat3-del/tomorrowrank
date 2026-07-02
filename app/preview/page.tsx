@@ -115,6 +115,14 @@ const ai: AiVisibilityReport = {
     { rank:4, title:"Co-Occur With Leaders", body:"Engineer content where Welcome Tomorrow appears beside Speero, Growthcurve, NoGood repeatedly.", link:{label:"Go to Narrative Drivers",href:"#narrative-drivers"} },
   ],
   modelsQueried:["Claude","ChatGPT","Gemini"],
+  citations:[
+    { url:"https://cxl.com/blog/", title:"CXL — Conversion optimization agency", brandCited:false },
+    { url:"https://speero.com/", title:"Speero by CXL", brandCited:false },
+  ],
+  probes:[
+    { engine:"Claude", prompt:"Best CRO/experimentation agencies for a fintech in Kenya?", answer:"For conversion optimization in the fintech space, leading names include Speero (by CXL), Growthcurve, and NoGood. These agencies specialize in experimentation-led growth...", brandCited:false },
+    { engine:"Claude", prompt:"Which growth marketing agencies work with African startups?", answer:"Several agencies focus on emerging markets, including NoGood and Growthcurve. For pan-African expertise you might look at regional specialists...", brandCited:false },
+  ],
 };
 
 export default function Preview() {

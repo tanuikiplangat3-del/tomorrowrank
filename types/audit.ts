@@ -140,6 +140,7 @@ export interface AiVisibilityReport {
   insights: VisibilityInsight[];
   modelsQueried: string[];     // which LLMs were polled
   citations?: { url: string; title: string; brandCited?: boolean }[]; // sources Claude cited via web search
+  probes?: { engine: string; prompt: string; answer: string; brandCited: boolean }[]; // raw Q&A behind the insights
 }
 
 // ---- Multi-page crawl / clickable issues ----

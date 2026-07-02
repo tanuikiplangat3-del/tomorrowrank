@@ -70,7 +70,7 @@ Return JSON:
 // PLUS the real sources Claude cited via web search.
 async function pollEngines(
   prompts: string[]
-): Promise<{ answers: { engine: string; text: string }[]; citations: { url: string; title: string }[] }> {
+): Promise<{ answers: { engine: string; text: string; prompt: string }[]; citations: { url: string; title: string }[] }> {
   const probe = prompts.slice(0, PROMPT_COUNT);
   const citeMap = new Map<string, string>();
 
@@ -89,16 +89,17 @@ async function pollEngines(
       )
     );
     const answers = results
-      .filter((r): r is PromiseFulfilledResult<{ answer: string; citations: { url: string; title: string }[] }> => r.status === "fulfilled")
-      .map((r) => {
+      .map((r, i) => ({ r, prompt: probe[i] }))
+      .filter((x): x is { r: PromiseFulfilledResult<{ answer: string; citations: { url: string; title: string }[] }>; prompt: string } => x.r.status === "fulfilled")
+      .map(({ r, prompt }) => {
         for (const c of r.value.citations) citeMap.set(c.url, c.title);
-        return { engine: "Claude", text: r.value.answer ?? "" };
+        return { engine: "Claude", text: r.value.answer ?? "", prompt };
       });
     return { answers, citations: [...citeMap].map(([url, title]) => ({ url, title })) };
   }
 
   // Full mode: Claude + optional OpenAI/Gemini, sequentially per prompt.
-  const out: { engine: string; text: string }[] = [];
+  const out: { engine: string; text: string; prompt: string }[] = [];
   for (const p of probe) {
     try {
       const r = await claudeAnswerWithCitations({
@@ -107,15 +108,15 @@ async function pollEngines(
         prompt: p,
         maxTokens: 800,
       });
-      out.push({ engine: "Claude", text: r.answer ?? "" });
+      out.push({ engine: "Claude", text: r.answer ?? "", prompt: p });
       for (const c of r.citations) citeMap.set(c.url, c.title);
     } catch {
       /* skip */
     }
     const oa = await queryOpenAI(p);
-    if (oa) out.push({ engine: "ChatGPT", text: oa });
+    if (oa) out.push({ engine: "ChatGPT", text: oa, prompt: p });
     const gm = await queryGemini(p);
-    if (gm) out.push({ engine: "Gemini", text: gm });
+    if (gm) out.push({ engine: "Gemini", text: gm, prompt: p });
   }
   return { answers: out, citations: [...citeMap].map(([url, title]) => ({ url, title })) };
 }
@@ -124,7 +125,7 @@ async function pollEngines(
 async function computeShareAndSentiment(
   brand: string,
   competitors: string[],
-  answers: { engine: string; text: string }[]
+  answers: { engine: string; text: string; prompt: string }[]
 ): Promise<{ shares: BrandShare[]; sentiment: AiVisibilityReport["overallSentiment"] }> {
   const corpus = answers.map((a, i) => `[#${i} ${a.engine}] ${a.text}`).join("\n\n");
   const brands = [brand, ...competitors];
@@ -404,6 +405,14 @@ async function runWithClaudeOnly(
         c.title.toLowerCase().includes(brandStem),
     }));
 
+  const brandStem2 = brand.toLowerCase().split(".")[0];
+  const probes = answers.slice(0, 8).map((a) => ({
+    engine: a.engine,
+    prompt: a.prompt,
+    answer: (a.text || "").slice(0, 600),
+    brandCited: (a.text || "").toLowerCase().includes(brandStem2),
+  }));
+
   return {
     clientBrand: brand,
     competitors: ctx.competitors,
@@ -413,6 +422,7 @@ async function runWithClaudeOnly(
     insights,
     modelsQueried: engines.length ? engines : ["Claude"],
     citations: markedCitations,
+    probes,
   };
 }
 

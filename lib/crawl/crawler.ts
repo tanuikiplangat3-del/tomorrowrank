@@ -19,7 +19,23 @@ export interface CrawlResult {
 }
 
 const UA =
-  "Mozilla/5.0 (compatible; TomorrowRankBot/1.0; +https://welcometomorrow.io)";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+// A page we couldn't genuinely read (bot challenge / WAF / 403). We must NOT
+// emit content findings from these — better to report "blocked" than invent one.
+export function looksBlocked(status: number, body: string): boolean {
+  if (status === 403 || status === 429 || status === 503) return true;
+  const b = body.slice(0, 4000).toLowerCase();
+  return (
+    b.includes("just a moment") ||
+    b.includes("cf-browser-verification") ||
+    b.includes("cf-challenge") ||
+    b.includes("attention required") ||
+    b.includes("enable javascript and cookies to continue") ||
+    b.includes("checking your browser before")
+  );
+}
 
 function normalizeUrl(u: string): string | null {
   try {
@@ -44,7 +60,13 @@ function sameHost(a: string, b: string): boolean {
 async function fetchText(url: string, timeoutMs: number): Promise<{ status: number; body: string; finalUrl: string }> {
   const res = await fetch(url, {
     redirect: "follow",
-    headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
+    headers: {
+      "User-Agent": UA,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Upgrade-Insecure-Requests": "1",
+    },
     signal: AbortSignal.timeout(timeoutMs),
   });
   const body = await res.text();
@@ -57,38 +79,46 @@ export function parseSitemapLocs(xml: string): string[] {
 }
 
 async function discoverFromSitemaps(origin: string, timeoutMs: number): Promise<string[]> {
-  const found = new Set<string>();
-  const candidates = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`];
+  const pages = new Set<string>();
+  const sitemapsToRead: string[] = [];
+  const seenSitemaps = new Set<string>();
 
-  // robots.txt may list sitemaps
+  // robots.txt is the authoritative place to find sitemaps
   try {
     const r = await fetchText(`${origin}/robots.txt`, Math.min(8000, timeoutMs));
     if (r.status < 400) {
-      for (const m of r.body.matchAll(/^\s*sitemap:\s*(\S+)/gim)) candidates.push(m[1].trim());
+      for (const m of r.body.matchAll(/^\s*sitemap:\s*(\S+)/gim)) sitemapsToRead.push(m[1].trim());
     }
   } catch { /* no robots */ }
 
-  for (const sm of [...new Set(candidates)].slice(0, 5)) {
-    try {
-      const r = await fetchText(sm, Math.min(10000, timeoutMs));
-      if (r.status >= 400) continue;
-      const locs = parseSitemapLocs(r.body);
-      // sitemap index → fetch child sitemaps (cap to keep it bounded)
-      const childSitemaps = locs.filter((l) => /\.xml($|\?)/i.test(l)).slice(0, 5);
-      if (childSitemaps.length && /sitemapindex/i.test(r.body)) {
-        for (const child of childSitemaps) {
-          try {
-            const cr = await fetchText(child, Math.min(10000, timeoutMs));
-            if (cr.status < 400) parseSitemapLocs(cr.body).forEach((l) => found.add(l));
-          } catch { /* skip child */ }
-        }
-      } else {
-        locs.forEach((l) => found.add(l));
-      }
-    } catch { /* skip */ }
-    if (found.size > 0) break;
+  // Common fallbacks if robots didn't list one
+  if (sitemapsToRead.length === 0) {
+    sitemapsToRead.push(`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`, `${origin}/sitemap-index.xml`);
   }
-  return [...found];
+
+  // Breadth-first over sitemaps: an index yields child sitemaps; a urlset yields pages.
+  // Bounded so it can't run away.
+  let budgetSitemaps = 30;
+  while (sitemapsToRead.length && budgetSitemaps-- > 0) {
+    const sm = sitemapsToRead.shift()!;
+    if (seenSitemaps.has(sm)) continue;
+    seenSitemaps.add(sm);
+    try {
+      const r = await fetchText(sm, Math.min(12000, timeoutMs));
+      if (r.status >= 400) continue;
+      const isIndex = /<sitemapindex[\s>]/i.test(r.body);
+      const locs = parseSitemapLocs(r.body);
+      if (isIndex) {
+        // children are more sitemaps
+        for (const child of locs) if (!seenSitemaps.has(child)) sitemapsToRead.push(child);
+      } else {
+        // urlset → real page URLs
+        for (const loc of locs) pages.add(loc);
+      }
+    } catch { /* skip this sitemap */ }
+    if (pages.size >= 200) break; // plenty; caller caps to maxPages
+  }
+  return [...pages];
 }
 
 async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -189,7 +219,7 @@ export async function crawlSite(
 
 function emptyFacts(url: string): PageFacts {
   return {
-    url, status: 0, ok: false, title: null, titleLen: 0, metaDescription: null, descLen: 0,
+    url, status: 0, ok: false, blocked: false, title: null, titleLen: 0, metaDescription: null, descLen: 0,
     canonical: null, canonicalSelf: null, robotsMeta: null, noindex: false, lang: null,
     h1s: [], h2s: [], headingOutlineOk: false, wordCount: 0, thin: true, hasViewport: false,
     hasFavicon: false, ogCount: 0, twitterCount: 0, schemaTypes: [], hasFaqSchema: false,

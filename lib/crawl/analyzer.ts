@@ -12,6 +12,7 @@ export interface PageFacts {
   url: string;
   status: number;
   ok: boolean;
+  blocked: boolean; // 403 / bot-challenge / WAF — content could NOT be genuinely read
   title: string | null;
   titleLen: number;
   metaDescription: string | null;
@@ -112,6 +113,15 @@ function sameHost(a: string, b: string): boolean {
 }
 
 export function analyzePage(url: string, status: number, html: string): PageFacts {
+  // Bot-challenge / WAF / 403 detection — do NOT trust content from these pages.
+  const b = (html || "").slice(0, 4000).toLowerCase();
+  const blocked =
+    status === 403 || status === 429 || status === 503 ||
+    b.includes("just a moment") || b.includes("cf-browser-verification") ||
+    b.includes("cf-challenge") || b.includes("attention required") ||
+    b.includes("enable javascript and cookies to continue") ||
+    b.includes("checking your browser before");
+
   const metas = tagsOf(html, "meta");
   const links = tagsOf(html, "link");
   const metaBy = (id: string) => {
@@ -164,7 +174,8 @@ export function analyzePage(url: string, status: number, html: string): PageFact
   return {
     url,
     status,
-    ok: status >= 200 && status < 400,
+    ok: status >= 200 && status < 400 && !blocked,
+    blocked,
     title,
     titleLen: title?.length ?? 0,
     metaDescription,
@@ -172,7 +183,8 @@ export function analyzePage(url: string, status: number, html: string): PageFact
     canonical,
     canonicalSelf,
     robotsMeta,
-    noindex,
+    // Never treat a challenge/403 page's meta as a real noindex.
+    noindex: blocked ? false : noindex,
     lang: html.match(/<html[^>]*\blang=["']([^"']+)["']/i)?.[1] ?? null,
     h1s,
     h2s,
