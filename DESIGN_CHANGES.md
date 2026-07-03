@@ -236,3 +236,29 @@ Add `RUN_AUDIT_INLINE=true` in Render to guarantee in-process execution.
 - Tooltip text is now **white** (`labelStyle`/`itemStyle` = #fff) — was dark-on-dark and unreadable.
 - Fixed **double percent** ("54%%") — axes no longer add `unit="%"` on top of the formatter; ticks keep `%` via tickFormatter.
 - Hid the internal bubble-size value that was showing as a stray "z : 648%".
+
+---
+
+## Update 11 — Lead-capture gate before audit runs
+
+A non-dismissable gate now appears when the user clicks Audit; the audit only
+starts after a valid submission (also enforced server-side, so it can't be bypassed
+by hiding the popup — the /api/audit/start call happens only after /api/lead succeeds).
+
+- **components/LeadGate.tsx** — Welcome Tomorrow styled modal: first name, last name,
+  company email, position (optional), and a required agreement checkbox
+  ("I agree to receive the SEO audit on my email from Welcome Tomorrow, and possible
+  reach-out if I'd like a customized report."). No close/X, no outside-click/ESC dismiss.
+- **app/api/lead/route.ts** — validates: name + agreement required; valid email format;
+  **rejects free providers** (Gmail/Yahoo/Outlook/iCloud/Proton/etc.); **MX-record check**
+  so fake/dead domains are rejected. Stores the lead.
+- **lib/store/leads.ts** — stores leads in Upstash Redis (free, already connected).
+  Swap to a CRM later by changing saveLead()/listLeads() only.
+- **app/api/leads/route.ts** — protected export to demo captured leads:
+  `/api/leads?secret=INTERNAL_SECRET` (JSON) or add `&format=csv` to download CSV.
+
+### Note / future
+- "Unremovable" is enforced at the action level (no audit without a valid lead), which is
+  the real, dependable version — a pure front-end popup can always be hidden in dev tools.
+- True "this person owns this inbox" requires a verification link (double opt-in) + an
+  email-sending service — a follow-up when you wire email/CRM.

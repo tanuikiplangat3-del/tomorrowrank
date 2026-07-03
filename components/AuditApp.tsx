@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuditJob } from "@/types/audit";
 import { COUNTRIES, LANGUAGES } from "@/lib/locations";
 import { SearchableSelect } from "./SearchableSelect";
+import { LeadGate } from "./LeadGate";
 import { Report } from "./Report";
 
 type Phase = "input" | "processing" | "done" | "error";
@@ -37,14 +38,22 @@ export function AuditApp() {
   const [keyword, setKeyword] = useState("");
   const [job, setJob] = useState<AuditJob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gateOpen, setGateOpen] = useState(false);
+  const [verified, setVerified] = useState(false); // lead captured this session
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPoll = () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
   useEffect(() => () => stopPoll(), []);
 
-  const start = useCallback(async () => {
+  // Clicking Audit first opens the lead gate (unless already verified this session).
+  const start = useCallback(() => {
     setError(null);
     if (!/\./.test(url)) { setError("Enter a valid URL, e.g. example.com"); return; }
+    if (!verified) { setGateOpen(true); return; }
+    void runAudit();
+  }, [url, verified]);
+
+  const runAudit = useCallback(async () => {
     setPhase("processing");
     try {
       const res = await fetch("/api/audit/start", {
@@ -85,6 +94,12 @@ export function AuditApp() {
 
   return (
     <div className="relative z-10 mx-auto max-w-3xl px-4 pb-16 pt-10 sm:pt-16">
+      {gateOpen && (
+        <LeadGate
+          url={url}
+          onVerified={() => { setVerified(true); setGateOpen(false); void runAudit(); }}
+        />
+      )}
       {/* Heading — white, no underline (dark canvas) */}
       <div className="text-center">
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-paper sm:text-6xl">
