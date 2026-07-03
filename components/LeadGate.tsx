@@ -18,6 +18,7 @@ export function LeadGate({
   const [email, setEmail] = useState("");
   const [position, setPosition] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [newsletter, setNewsletter] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,7 +32,7 @@ export function LeadGate({
       const res = await fetch("/api/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, email, position, agreed, url }),
+        body: JSON.stringify({ firstName, lastName, email, position, agreed, newsletter, url }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.error || "Could not verify your details."); setSubmitting(false); return; }
@@ -61,7 +62,7 @@ export function LeadGate({
             <input className={field} placeholder="Last name" value={lastName} onChange={(e) => setLast(e.target.value)} />
           </div>
           <input className={field} type="email" placeholder="Company email (no Gmail/Yahoo)" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className={field} placeholder="Your position (optional)" value={position} onChange={(e) => setPosition(e.target.value)} />
+          <input className={field} placeholder="Position" value={position} onChange={(e) => setPosition(e.target.value)} />
 
           <label className="flex cursor-pointer items-start gap-2.5 pt-1">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)}
@@ -69,6 +70,14 @@ export function LeadGate({
             <span className="text-xs leading-relaxed text-muted">
               I agree to receive the SEO audit on my email from Welcome Tomorrow, and possible reach-out if I&apos;d
               like a customized report.
+            </span>
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input type="checkbox" checked={newsletter} onChange={(e) => setNewsletter(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-wtgreen" />
+            <span className="text-xs leading-relaxed text-muted">
+              Subscribe me to the Welcome Tomorrow newsletter for SEO &amp; AI-visibility insights.
             </span>
           </label>
 

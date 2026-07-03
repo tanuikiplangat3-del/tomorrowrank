@@ -15,9 +15,9 @@ export async function GET(req: NextRequest) {
   const leads = await listLeads();
 
   if (req.nextUrl.searchParams.get("format") === "csv") {
-    const header = "createdAt,firstName,lastName,email,company,position,url,agreed";
+    const header = "createdAt,firstName,lastName,email,company,position,url,agreed,newsletter";
     const rows = leads.map((l) =>
-      [l.createdAt, l.firstName, l.lastName, l.email, l.company, l.position ?? "", l.url, l.agreed]
+      [l.createdAt, l.firstName, l.lastName, l.email, l.company, l.position ?? "", l.url, l.agreed, l.newsletter ?? false]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")
     );
     return new NextResponse([header, ...rows].join("\n"), {

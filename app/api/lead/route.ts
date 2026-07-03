@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     const email = String(body.email ?? "").trim().toLowerCase();
     const position = String(body.position ?? "").trim();
     const agreed = body.agreed === true;
+    const newsletter = body.newsletter === true;
     const url = String(body.url ?? "").trim();
 
     if (!firstName || !lastName) {
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
       company: domain,
       position: position || undefined,
       agreed,
+      newsletter,
       url,
       createdAt: new Date().toISOString(),
     };

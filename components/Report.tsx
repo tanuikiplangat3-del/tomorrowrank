@@ -4,14 +4,15 @@ import type { AuditReport, AiVisibilityReport, CheckResult } from "@/types/audit
 import { GradeGauge, CategoryRadar, PriorityBadge, CategoryTag } from "./Primitives";
 import { AiVisibilitySection } from "./AiVisibility";
 import { SiteIssues } from "./SiteIssues";
+import { GateContext, CtaButton } from "./Gate";
 
 const HEADLINE_CATS = ["On-Page SEO", "GEO", "Links", "Usability", "Performance"] as const;
 
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
 
 export function Report({
-  report, ai,
-}: { report: AuditReport; ai?: AiVisibilityReport }) {
+  report, ai, gated = true,
+}: { report: AuditReport; ai?: AiVisibilityReport; gated?: boolean }) {
   const headlineScores = HEADLINE_CATS.map(
     (c) => report.categories.find((x) => x.category === c)
   ).filter(Boolean) as AuditReport["categories"];
@@ -20,6 +21,7 @@ export function Report({
   const warning = report.checks.filter((c) => c.status === "warn");
 
   return (
+    <GateContext.Provider value={{ gated }}>
     <div className="mx-auto max-w-6xl px-4 py-10">
       {/* Intro card */}
       <header className={CARD}>
@@ -108,12 +110,12 @@ export function Report({
           Ready to <span className="text-wtgreen">fix these?</span>
         </h2>
         <p className="mt-2 text-muted">Welcome Tomorrow can implement every recommendation in this report.</p>
-        <a href="https://welcometomorrow.io/contact"
-          className="mt-5 inline-block rounded-lg bg-wtgreen px-7 py-3 font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep">
-          Let&apos;s do this →
-        </a>
+        <div className="mt-5">
+          <CtaButton label="Book a quick call with our expert" source="report-footer" className="px-7 py-3 text-base" />
+        </div>
       </section>
     </div>
+    </GateContext.Provider>
   );
 }
 
@@ -188,32 +190,42 @@ function DetailGrid({ report }: { report: AuditReport }) {
         </ul>
       </div>
 
-      {/* Performance */}
-      <div className={`lg:col-span-2 ${CARD}`}>
-        <h3 className="font-display text-lg font-bold text-paper">PageSpeed & Core Web Vitals</h3>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {(["mobile", "desktop"] as const).map((s) => {
-            const p = performance[s];
-            return (
-              <div key={s} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
-                <p className="font-display font-bold capitalize text-paper">{s}</p>
-                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                  <Stat label="Perf Score" value={p.performanceScore} />
-                  <Stat label="LCP (s)" value={p.lcp} />
-                  <Stat label="CLS" value={p.cls} />
-                  <Stat label="INP (ms)" value={p.inp} />
+      {/* Performance — only shown when PageSpeed data actually exists */}
+      {hasPerf(performance) && (
+        <div className={`lg:col-span-2 ${CARD}`}>
+          <h3 className="font-display text-lg font-bold text-paper">PageSpeed & Core Web Vitals</h3>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {(["mobile", "desktop"] as const).map((s) => {
+              const p = performance[s];
+              return (
+                <div key={s} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
+                  <p className="font-display font-bold capitalize text-paper">{s}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <Stat label="Perf Score" value={p.performanceScore} />
+                    <Stat label="LCP (s)" value={p.lcp} />
+                    <Stat label="CLS" value={p.cls} />
+                    <Stat label="INP (ms)" value={p.inp} />
+                  </div>
+                  <p className="mt-2 text-xs font-semibold"
+                    style={{ color: p.passesCoreWebVitals ? "#4CA66B" : "#F06A5A" }}>
+                    {p.passesCoreWebVitals === null ? "CWV: insufficient field data"
+                      : p.passesCoreWebVitals ? "Core Web Vitals: Passing" : "Core Web Vitals: Failing"}
+                  </p>
                 </div>
-                <p className="mt-2 text-xs font-semibold"
-                  style={{ color: p.passesCoreWebVitals ? "#4CA66B" : "#F06A5A" }}>
-                  {p.passesCoreWebVitals === null ? "CWV: insufficient field data"
-                    : p.passesCoreWebVitals ? "Core Web Vitals: Passing" : "Core Web Vitals: Failing"}
-                </p>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </section>
+  );
+}
+
+// True only when at least one performance metric actually came back.
+function hasPerf(performance: AuditReport["performance"]): boolean {
+  const sides = [performance?.mobile, performance?.desktop].filter(Boolean) as any[];
+  return sides.some((p) =>
+    p && (p.performanceScore != null || p.lcp != null || p.cls != null || p.inp != null)
   );
 }
 

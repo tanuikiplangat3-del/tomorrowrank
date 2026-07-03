@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import type { SiteIssue, CrawlMeta } from "@/types/audit";
+import { BlurGate, CtaButton } from "./Gate";
 
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
 
@@ -83,6 +84,9 @@ export function SiteIssues({ issues, meta }: { issues: SiteIssue[]; meta?: Crawl
                 </li>
               ))}
             </ul>
+            <div className="mt-4">
+              <CtaButton label="Engage an expert for better results" source="not-checked" className="w-full text-center" />
+            </div>
           </div>
         )}
       </div>
@@ -116,33 +120,35 @@ function IssueRow({ issue }: { issue: SiteIssue }) {
 
       {open && (
         <div className="mt-4 border-t border-white/10 pt-4">
-          {/* Affected URLs with first-hand evidence */}
-          <ul className="max-h-80 space-y-1.5 overflow-auto pr-1">
-            {issue.affected.map((a, i) => (
-              <li key={i} className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-                <a href={a.url} target="_blank" rel="noopener noreferrer"
-                  className="block truncate text-sm font-semibold text-paper hover:text-wtgreen">
-                  {a.url}
-                </a>
-                <span className="block truncate text-xs text-muted">{a.evidence}</span>
-              </li>
-            ))}
-          </ul>
+          <BlurGate source={`site-issue:${issue.id}`}>
+            {/* Affected URLs with first-hand evidence */}
+            <ul className="max-h-80 space-y-1.5 overflow-auto pr-1">
+              {issue.affected.map((a, i) => (
+                <li key={i} className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                  <a href={a.url} target="_blank" rel="noopener noreferrer"
+                    className="block truncate text-sm font-semibold text-paper hover:text-wtgreen">
+                    {a.url}
+                  </a>
+                  <span className="block truncate text-xs text-muted">{a.evidence}</span>
+                </li>
+              ))}
+            </ul>
 
-          {/* Recommendation + actions */}
-          <div className="mt-4 rounded-lg bg-wtgreen/10 p-4">
-            <p className="text-sm font-semibold text-paper">Recommendation</p>
-            <p className="mt-1 text-sm text-muted">{issue.recommendation}</p>
-            {issue.actions.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {issue.actions.map((a) => (
-                  <span key={a} className="rounded-md bg-wtgreen/20 px-2.5 py-1 text-xs font-bold text-wtgreen">
-                    {ACTION_LABEL[a] ?? a}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+            {/* Recommendation + actions */}
+            <div className="mt-4 rounded-lg bg-wtgreen/10 p-4">
+              <p className="text-sm font-semibold text-paper">Recommendation</p>
+              <p className="mt-1 text-sm text-muted">{issue.recommendation}</p>
+              {issue.actions.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {issue.actions.map((a) => (
+                    <span key={a} className="rounded-md bg-wtgreen/20 px-2.5 py-1 text-xs font-bold text-wtgreen">
+                      {ACTION_LABEL[a] ?? a}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </BlurGate>
         </div>
       )}
     </div>

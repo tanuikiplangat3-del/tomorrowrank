@@ -126,5 +126,5 @@ const ai: AiVisibilityReport = {
 };
 
 export default function Preview() {
-  return <main className="relative z-10 min-h-screen"><Report report={report} ai={ai} /></main>;
+  return <main className="relative z-10 min-h-screen"><Report report={report} ai={ai} gated={true} /></main>;
 }

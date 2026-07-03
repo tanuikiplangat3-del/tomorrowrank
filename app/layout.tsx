@@ -3,11 +3,11 @@ import "./globals.css";
 import { Background } from "@/components/Background";
 
 export const metadata: Metadata = {
-  title: "TomorrowRank — SEO & AI Visibility Audit Tool",
+  title: "RankTomorrow — SEO & AI Visibility Audit Tool",
   description:
     "Free SEO audit + GEO / AI Visibility report by Welcome Tomorrow. Grade your On-Page SEO, GEO, backlinks, Core Web Vitals and share of voice across AI engines.",
   openGraph: {
-    title: "TomorrowRank — SEO & AI Visibility Audit Tool",
+    title: "RankTomorrow — SEO & AI Visibility Audit Tool",
     description: "Grade your site's SEO and AI visibility in minutes.",
     type: "website",
   },

@@ -30,7 +30,7 @@ async function readJson(res: Response): Promise<any> {
   }
 }
 
-export function AuditApp() {
+export function AuditApp({ internal = false }: { internal?: boolean }) {
   const [phase, setPhase] = useState<Phase>("input");
   const [url, setUrl] = useState("");
   const [country, setCountry] = useState("Kenya");
@@ -39,19 +39,19 @@ export function AuditApp() {
   const [job, setJob] = useState<AuditJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
-  const [verified, setVerified] = useState(false); // lead captured this session
+  const [verified, setVerified] = useState(internal); // internal team is pre-verified
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPoll = () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
   useEffect(() => () => stopPoll(), []);
 
-  // Clicking Audit first opens the lead gate (unless already verified this session).
+  // Clicking Audit first opens the lead gate (unless internal or already verified).
   const start = useCallback(() => {
     setError(null);
     if (!/\./.test(url)) { setError("Enter a valid URL, e.g. example.com"); return; }
-    if (!verified) { setGateOpen(true); return; }
+    if (!internal && !verified) { setGateOpen(true); return; }
     void runAudit();
-  }, [url, verified]);
+  }, [url, verified, internal]);
 
   const runAudit = useCallback(async () => {
     setPhase("processing");
@@ -87,7 +87,7 @@ export function AuditApp() {
   if (phase === "done" && job?.report) {
     return (
       <div className="relative z-10">
-        <Report report={job.report} ai={job.aiVisibility} />
+        <Report report={job.report} ai={job.aiVisibility} gated={!internal} />
       </div>
     );
   }

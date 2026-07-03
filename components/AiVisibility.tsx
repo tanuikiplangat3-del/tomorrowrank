@@ -6,6 +6,7 @@ import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import type { AiVisibilityReport } from "@/types/audit";
+import { BlurGate } from "./Gate";
 
 // Green-led palette on the dark canvas; client brand is always wtgreen.
 const PALETTE = ["#4CA66B", "#9BC846", "#9B8BFF", "#E2B340", "#F06A5A", "#7E8B84"];
@@ -235,39 +236,41 @@ function InsightRow({
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">
             What we asked the AI &amp; what it answered
           </p>
-          {probes.length === 0 && (
-            <p className="text-sm text-muted">No probe data was captured for this run.</p>
-          )}
-          <ul className="space-y-2">
-            {probes.map((p, i) => (
-              <li key={i} className="rounded-md bg-white/[0.03] p-2.5">
-                <p className="text-sm font-semibold text-paper">
-                  <span className="mr-2 rounded bg-violet/20 px-1.5 py-0.5 text-xs text-violet">{p.engine}</span>
-                  {p.prompt}
-                </p>
-                <p className="mt-1 line-clamp-3 text-xs text-muted">{p.answer}</p>
-                <span className={`mt-1 inline-block text-xs font-bold ${p.brandCited ? "text-good" : "text-bad"}`}>
-                  {p.brandCited ? "✓ Your brand was mentioned" : "✗ Your brand was NOT mentioned"}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <BlurGate source={`ai-insight:${ins.rank}`}>
+            {probes.length === 0 && (
+              <p className="text-sm text-muted">No probe data was captured for this run.</p>
+            )}
+            <ul className="space-y-2">
+              {probes.map((p, i) => (
+                <li key={i} className="rounded-md bg-white/[0.03] p-2.5">
+                  <p className="text-sm font-semibold text-paper">
+                    <span className="mr-2 rounded bg-violet/20 px-1.5 py-0.5 text-xs text-violet">{p.engine}</span>
+                    {p.prompt}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-xs text-muted">{p.answer}</p>
+                  <span className={`mt-1 inline-block text-xs font-bold ${p.brandCited ? "text-good" : "text-bad"}`}>
+                    {p.brandCited ? "✓ Your brand was mentioned" : "✗ Your brand was NOT mentioned"}
+                  </span>
+                </li>
+              ))}
+            </ul>
 
-          {citations.length > 0 && (
-            <>
-              <p className="mb-1 mt-3 text-xs font-bold uppercase tracking-wide text-muted">Sources the AI cited</p>
-              <ul className="space-y-1">
-                {citations.slice(0, 6).map((c, i) => (
-                  <li key={i}>
-                    <a href={c.url} target="_blank" rel="noopener noreferrer"
-                      className="block truncate text-xs text-paper hover:text-wtgreen">
-                      {c.brandCited ? "★ " : ""}{c.title || c.url}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+            {citations.length > 0 && (
+              <>
+                <p className="mb-1 mt-3 text-xs font-bold uppercase tracking-wide text-muted">Sources the AI cited</p>
+                <ul className="space-y-1">
+                  {citations.slice(0, 6).map((c, i) => (
+                    <li key={i}>
+                      <a href={c.url} target="_blank" rel="noopener noreferrer"
+                        className="block truncate text-xs text-paper hover:text-wtgreen">
+                        {c.brandCited ? "★ " : ""}{c.title || c.url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </BlurGate>
         </div>
       )}
     </li>

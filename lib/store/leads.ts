@@ -12,6 +12,7 @@ export interface Lead {
   company: string;      // derived from email domain
   position?: string;
   agreed: boolean;
+  newsletter?: boolean;
   url: string;          // the site they wanted audited
   createdAt: string;
 }
