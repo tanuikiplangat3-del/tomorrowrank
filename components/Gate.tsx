@@ -16,6 +16,14 @@ import { createContext, useContext } from "react";
 // to this tool. Swap BOOKING_URL when the real CRM/booking link is provided.
 export const BOOKING_URL = "https://welcometomorrow.typeform.com/to/CeIvTBF5";
 
+// The app runs under a basePath (e.g. /ranktomorrow). Client-side fetch() is NOT
+// auto-prefixed by Next.js, so API calls must go through this helper.
+export const BASE_PATH = "/ranktomorrow";
+export function apiPath(p: string): string {
+  const path = p.startsWith("/") ? p : `/${p}`;
+  return `${BASE_PATH}${path}`;
+}
+
 // Add a source tag so it's traceable as coming from RankTomorrow.
 export function ctaHref(source: string): string {
   const sep = BOOKING_URL.includes("?") ? "&" : "?";

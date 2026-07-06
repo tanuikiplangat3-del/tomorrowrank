@@ -262,3 +262,19 @@ by hiding the popup — the /api/audit/start call happens only after /api/lead s
   the real, dependable version — a pure front-end popup can always be hidden in dev tools.
 - True "this person owns this inbox" requires a verification link (double opt-in) + an
   email-sending service — a follow-up when you wire email/CRM.
+
+---
+
+## Update 13 — AWS-ready: basePath /ranktomorrow + Docker (Maxime's tools./ranktomorrow model)
+
+- **next.config.js**: added `basePath: "/ranktomorrow"` (app now served under tools.welcometomorrow.io/ranktomorrow) and `output: "standalone"` (small container image).
+- **components/Gate.tsx**: added BASE_PATH + `apiPath()` helper (client-side fetch is NOT auto-prefixed by Next.js basePath).
+- Prefixed all client API calls with apiPath(): /api/lead (LeadGate), /api/audit/start + /api/audit/status (AuditApp).
+- **Dockerfile** (multi-stage, node:20-slim, non-root, runs .next/standalone/server.js on port 3000).
+- **.dockerignore** added.
+- Verified locally on the standalone server: / → 404, /ranktomorrow → 200, /ranktomorrow/seo → 200, /ranktomorrow/api/audit/health responds.
+- On ECS set env var **RUN_AUDIT_INLINE=true** (no RENDER var there) so audits run in-process.
+
+### Routing target (for ECS/ALB step)
+- ALB path rule: /ranktomorrow* → this service (container port 3000). Later /tool2* → another service.
+- Cloudflare: tools.welcometomorrow.io → ALB (DNS only / grey cloud).

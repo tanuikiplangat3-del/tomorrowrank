@@ -5,6 +5,7 @@
 // outside-click dismiss, no ESC — it resolves only on success.
 
 import { useState } from "react";
+import { apiPath } from "./Gate";
 
 export function LeadGate({
   url,
@@ -29,7 +30,7 @@ export function LeadGate({
     if (!agreed) { setError("Please tick the box to receive your audit by email."); return; }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/lead", {
+      const res = await fetch(apiPath("/api/lead"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ firstName, lastName, email, position, agreed, newsletter, url }),

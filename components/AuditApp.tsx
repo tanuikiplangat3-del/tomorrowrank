@@ -5,6 +5,7 @@ import type { AuditJob } from "@/types/audit";
 import { COUNTRIES, LANGUAGES } from "@/lib/locations";
 import { SearchableSelect } from "./SearchableSelect";
 import { LeadGate } from "./LeadGate";
+import { apiPath } from "./Gate";
 import { Report } from "./Report";
 
 type Phase = "input" | "processing" | "done" | "error";
@@ -56,7 +57,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   const runAudit = useCallback(async () => {
     setPhase("processing");
     try {
-      const res = await fetch("/api/audit/start", {
+      const res = await fetch(apiPath("/api/audit/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, country, language, targetKeyword: keyword }),
@@ -67,7 +68,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
 
       pollRef.current = setInterval(async () => {
         try {
-          const r = await fetch(`/api/audit/status?id=${jobId}`);
+          const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
           const j: AuditJob = await readJson(r);
           setJob(j);
           if (j.status === "done") { stopPoll(); setPhase("done"); }
