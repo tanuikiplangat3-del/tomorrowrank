@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { promises as dns } from "dns";
 import { saveLead, type Lead } from "@/lib/store/leads";
 import { attioConfigured, pushLeadToAttio } from "@/lib/store/attio";
+import { emailMatchesSite } from "@/lib/leadmatch";
 
 export const runtime = "nodejs";
 
@@ -55,6 +56,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Please use your company email — free inboxes (Gmail, Yahoo, Outlook, etc.) aren't accepted." },
         { status: 400 }
+      );
+    }
+    // The company email must belong to the domain being audited. The client
+    // shows a "contact us to verify" CTA on mismatch; we also enforce it here.
+    if (url && !emailMatchesSite(email, url)) {
+      return NextResponse.json(
+        { error: "MISMATCH", contact: "seo@welcometomorrow.io" },
+        { status: 422 }
       );
     }
     if (!(await domainHasMx(domain))) {

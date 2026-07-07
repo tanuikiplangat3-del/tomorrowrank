@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
         country: body.country || "Kenya",
         language: body.language || "English",
         targetKeyword: body.targetKeyword?.trim() || undefined,
+        internal: body.internal === true,
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

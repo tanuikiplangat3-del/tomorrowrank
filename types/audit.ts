@@ -222,7 +222,7 @@ export interface AuditJob {
   status: JobStatus;
   stage: string;               // human-readable current stage
   progress: number;            // 0..100
-  input: { url: string; country: string; language: string; targetKeyword?: string };
+  input: { url: string; country: string; language: string; targetKeyword?: string; internal?: boolean };
   report?: AuditReport;
   aiVisibility?: AiVisibilityReport;
   error?: string;

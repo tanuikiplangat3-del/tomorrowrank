@@ -61,6 +61,21 @@ export async function runAudit(job: AuditJob): Promise<void> {
   const set = (stage: string, progress: number) =>
     updateJob(job.id, { status: "running", stage, progress });
 
+  // Watchdog: guarantee the job ALWAYS reaches a terminal state, even if some
+  // step hangs (e.g. a bot-protected site that stalls a fetch). Without this the
+  // UI could spin forever. Fires HARD_CAP after start; cleared on normal finish.
+  const HARD_CAP = BUDGET_MS + 30_000;
+  let finished = false;
+  const watchdog = setTimeout(() => {
+    if (!finished) {
+      updateJob(job.id, {
+        status: "error",
+        stage: "Timed out",
+        error: "The audit took too long and was stopped. Please try again — some sites (e.g. bot-protected ones) can be slow to analyse.",
+      }).catch(() => {});
+    }
+  }, HARD_CAP);
+
   try {
     // 1. Fetch + parse the page
     await set("Fetching and parsing your page", 8);
@@ -150,8 +165,13 @@ export async function runAudit(job: AuditJob): Promise<void> {
           }
         }
         if (!siteIssues) {
+          // Internal team audits crawl deeper (up to 500 pages); the public tool
+          // stays lean (50) for speed. Still time-boxed by crawlBudget either way.
+          const maxPages = job.input.internal
+            ? (Number(process.env.CRAWL_MAX_PAGES_INTERNAL) || 500)
+            : (Number(process.env.CRAWL_MAX_PAGES) || 50);
           const crawl = await withTimeout(
-            crawlSite(signals.finalUrl, { deadlineMs: crawlBudget }),
+            crawlSite(signals.finalUrl, { deadlineMs: crawlBudget, maxPages }),
             crawlBudget
           );
           siteIssues = buildSiteIssues(crawl.pages);
@@ -236,6 +256,9 @@ export async function runAudit(job: AuditJob): Promise<void> {
       stage: "Failed",
       error: err?.message ?? "Unknown error",
     });
+  } finally {
+    finished = true;
+    clearTimeout(watchdog);
   }
 }
 

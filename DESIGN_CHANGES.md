@@ -363,3 +363,16 @@ All compile + typecheck clean. Requires rebuild + redeploy (code changes).
 - The logo file serves correctly at /ranktomorrow/welcome-tomorrow-logo.png (confirmed reachable), but next/image with `unoptimized:true` + basePath dropped the /ranktomorrow prefix, so the rendered <img> requested /welcome-tomorrow-logo.png and 404'd (broken-image icon).
 - FIX: components/Landing.tsx now uses a plain <img src="/ranktomorrow/welcome-tomorrow-logo.png"> (removed next/image import). Guaranteed to match the served path.
 - Bundled with Update 18 (spin/thin/Attio fixes) so it all ships in ONE rebuild.
+
+---
+
+## Update 19 — Internal 500-page crawl, never-spin watchdog, lead-gate domain match
+
+1. **Internal crawl up to 500 pages.** AuditApp passes `internal` to /api/audit/start → stored on job.input.internal → orchestrator sets crawl maxPages to 500 for internal (CRAWL_MAX_PAGES_INTERNAL, default 500), 50 for external (CRAWL_MAX_PAGES). Still time-boxed by crawlBudget, so it returns partial if time runs out. NOTE: for a genuinely deep 500-page crawl, raise AUDIT_BUDGET_MS (e.g. 480000) so there's time.
+2. **Never-spin watchdog.** runAudit now arms a watchdog (BUDGET_MS + 30s); if any step hangs (e.g. a bot-protected/Cloudflare site that stalls a fetch), it forces the job to a terminal "Timed out" error instead of spinning forever. Cleared on normal finish. This is the definitive fix for the infinite spinner.
+3. **Lead-gate company-email domain match.** New lib/leadmatch.ts (emailMatchesSite) — the work email must belong to the audited domain (tolerates www + subdomains). On mismatch the LeadGate shows a "Contact Welcome Tomorrow to verify" CTA (mailto:seo@welcometomorrow.io, prefilled) instead of erroring. Enforced server-side too (/api/lead returns 422 on mismatch).
+
+All compile + typecheck clean. Requires rebuild + redeploy.
+
+## STILL TO DO (next focused build) — Update 20
+- Resend + Claude-generated PDF report emailing from seo@welcometomorrow.io on "Click to receive report", still creating the Attio lead. RESEND_API_KEY ready. Being done as its own build (new dependency, can't be tested from sandbox).

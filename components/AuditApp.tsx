@@ -60,7 +60,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       const res = await fetch(apiPath("/api/audit/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, country, language, targetKeyword: keyword }),
+        body: JSON.stringify({ url, country, language, targetKeyword: keyword, internal }),
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to start audit");

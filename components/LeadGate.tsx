@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { apiPath } from "./Gate";
+import { emailMatchesSite, siteHost } from "@/lib/leadmatch";
 
 export function LeadGate({
   url,
@@ -21,13 +22,18 @@ export function LeadGate({
   const [agreed, setAgreed] = useState(false);
   const [newsletter, setNewsletter] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mismatch, setMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function submit() {
     setError(null);
+    setMismatch(false);
     if (!firstName.trim() || !lastName.trim()) { setError("Please enter your first and last name."); return; }
     if (!email.trim()) { setError("Please enter your company email."); return; }
     if (!agreed) { setError("Please tick the box to receive your audit by email."); return; }
+    // The company email must belong to the domain being audited. If it doesn't,
+    // we don't error — we invite them to contact Welcome Tomorrow to verify.
+    if (!emailMatchesSite(email, url)) { setMismatch(true); return; }
     setSubmitting(true);
     try {
       const res = await fetch(apiPath("/api/lead"), {
@@ -36,6 +42,7 @@ export function LeadGate({
         body: JSON.stringify({ firstName, lastName, email, position, agreed, newsletter, url }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 422 || data.error === "MISMATCH") { setMismatch(true); setSubmitting(false); return; }
       if (!res.ok) { setError(data.error || "Could not verify your details."); setSubmitting(false); return; }
       onVerified(data.leadId);
     } catch {
@@ -43,6 +50,10 @@ export function LeadGate({
       setSubmitting(false);
     }
   }
+
+  const contactHref =
+    `mailto:seo@welcometomorrow.io?subject=${encodeURIComponent(`Audit verification for ${siteHost(url) ?? url}`)}` +
+    `&body=${encodeURIComponent(`Hi Welcome Tomorrow team,\n\nI'd like to run an SEO & AI-visibility audit for ${siteHost(url) ?? url}, but my email domain doesn't match the site. Could you help verify me?\n\nName: ${firstName} ${lastName}\nEmail: ${email}\nSite: ${url}\n\nThanks!`)}`;
 
   const field =
     "w-full rounded-lg border border-glassBorder bg-white/[0.04] px-3 py-2.5 text-sm text-paper placeholder:text-muted outline-none focus:border-wtgreen";
@@ -84,13 +95,38 @@ export function LeadGate({
 
           {error && <p className="text-sm font-medium text-bad">{error}</p>}
 
-          <button
-            onClick={submit}
-            disabled={submitting}
-            className="mt-1 w-full rounded-lg bg-wtgreen px-6 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep disabled:opacity-60"
-          >
-            {submitting ? "Verifying…" : "Run my audit →"}
-          </button>
+          {mismatch ? (
+            <div className="mt-1 space-y-3 rounded-lg border border-wtgreen/40 bg-wtgreen/10 p-4">
+              <p className="text-sm font-semibold text-paper">
+                That email doesn&apos;t match {siteHost(url) ?? "the site"}.
+              </p>
+              <p className="text-xs leading-relaxed text-muted">
+                To keep audits genuine, we send reports to a company email on the same domain as the
+                site being audited. If you work with {siteHost(url) ?? "this site"} but use a different
+                email, contact us and we&apos;ll verify you.
+              </p>
+              <a
+                href={contactHref}
+                className="block w-full rounded-lg bg-wtgreen px-6 py-3 text-center text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep"
+              >
+                Contact Welcome Tomorrow to verify →
+              </a>
+              <button
+                onClick={() => setMismatch(false)}
+                className="w-full text-center text-xs text-muted underline hover:text-paper"
+              >
+                Use a different email
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={submit}
+              disabled={submitting}
+              className="mt-1 w-full rounded-lg bg-wtgreen px-6 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep disabled:opacity-60"
+            >
+              {submitting ? "Verifying…" : "Run my audit →"}
+            </button>
+          )}
           <p className="text-center text-[11px] text-muted">Powered by Welcome Tomorrow · welcometomorrow.io</p>
         </div>
       </div>
