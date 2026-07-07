@@ -180,10 +180,11 @@ export async function runAudit(job: AuditJob): Promise<void> {
           const baseMax = job.input.internal
             ? (Number(process.env.CRAWL_MAX_PAGES_INTERNAL) || 500)
             : (Number(process.env.CRAWL_MAX_PAGES) || 50);
-          // Credit guard: when proxying, cap pages (internal deeper than external).
+          // Credit + speed guard: proxied (stealth) pages are slow (~10-20s each)
+          // and costly, so when proxying we crawl a fast representative sample.
           const proxyCap = job.input.internal
-            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 150)
-            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 25);
+            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 30)
+            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 12);
           const maxPages = useProxy ? Math.min(baseMax, proxyCap) : baseMax;
 
           const crawl = await withTimeout(
@@ -191,7 +192,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
               deadlineMs: crawlBudget,
               maxPages,
               proxy: useProxy ? proxyMode : "none",
-              concurrency: useProxy ? 4 : 5,
+              concurrency: useProxy ? 8 : 5,
             }),
             crawlBudget
           );

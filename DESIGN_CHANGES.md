@@ -406,3 +406,16 @@ Fixes:
 Env knobs: CRAWL_VIA_SCRAPINGBEE=true (on), SCRAPINGBEE_PROXY_MODE=stealth|premium, PROXY_CRAWL_MAX_PAGES_INTERNAL, PROXY_CRAWL_MAX_PAGES.
 
 HONEST: stealth bypass + costs are UNTESTED from sandbox — first real audit after deploy confirms whether stealth defeats this Cloudflare and what it costs. Cheapest fix for THEIR OWN site (welcometomorrow.io) is to allowlist the crawler in their Cloudflare WAF (no credits at all).
+
+---
+
+## Update 22 — Speed fixes (audits were slow, not hung) + Attio non-blocking
+
+Logs showed NO audit error — the audit was just too slow (felt stuck). Causes + fixes:
+1. Main page fetched a protected site via basic→premium→stealth sequentially (~70s). Now: one basic try, then straight to stealth (skip premium) — ~30s worst case. SCRAPINGBEE_PROXY_MODE still configurable.
+2. Proxy crawl page caps cut for speed: internal 30 (was 150), external 12 (was 25); per-page proxy timeout 18s (was 30s); concurrency 8 when proxying. A fast representative stealth crawl instead of a slow deep one.
+3. Attio push is now BACKGROUND (fire-and-forget) in /api/lead — the earlier version awaited up to 4 failed Deal attempts (~80s) and slowed the lead gate. Lead is saved to Redis first, so nothing is lost.
+
+Also seen in logs: Attio Deal has a REQUIRED attribute (id 274b602a-9abe-4d82-bdbd-c9d7ba9f255b) we don't provide, so even the minimal Deal create fails. Person still upserts. To create Deals, make that Deal attribute optional in Attio, or tell me its slug + a value to send.
+
+HONEST: for welcometomorrow.io (their OWN site), the best "full crawl like any SEO tool" path is to allowlist the crawler in their Cloudflare WAF — then it's not protected, and the direct 500-page crawl works fast + free. Inline stealth crawling can only sample (speed/credit limits).

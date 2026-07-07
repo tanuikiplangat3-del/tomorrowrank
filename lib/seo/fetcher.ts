@@ -199,28 +199,23 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
     html = "";
   }
 
-  // 2. If the site genuinely BLOCKED the bot (403/429/503 or a Cloudflare
-  //    challenge), retry via ScrapingBee, escalating basic → premium → stealth.
-  //    Stealth defeats Cloudflare/WAF. This is only the MAIN page, so cost/time
-  //    stays controlled; the crawl decides separately whether to proxy.
+  // 2. If the site genuinely BLOCKED the bot, retry via ScrapingBee. One cheap
+  //    basic render first (handles plain JS sites); if still blocked, go STRAIGHT
+  //    to the strongest mode (stealth) — skipping the slow premium middle step so
+  //    the homepage fetch stays fast (~30s worst case, not ~70s).
   let wasProtected = false;
   if (scrapingBeeConfigured() && looksBlocked(status, html)) {
     wasProtected = true;
-    const basic = await scrapingBeeFetch(url, "basic", 15_000);
+    const mode = (process.env.SCRAPINGBEE_PROXY_MODE as "premium" | "stealth") || "stealth";
+    const basic = await scrapingBeeFetch(url, "basic", 12_000);
     if (basic && !looksBlocked(basic.status, basic.html)) {
       ({ status, html, finalUrl } = basic);
       renderedVia = "scrapingbee";
     } else {
-      const premium = await scrapingBeeFetch(url, "premium", 25_000);
-      if (premium && !looksBlocked(premium.status, premium.html)) {
-        ({ status, html, finalUrl } = premium);
-        renderedVia = "scrapingbee-premium";
-      } else {
-        const stealth = await scrapingBeeFetch(url, "stealth", 30_000);
-        if (stealth && !looksBlocked(stealth.status, stealth.html)) {
-          ({ status, html, finalUrl } = stealth);
-          renderedVia = "scrapingbee-stealth";
-        }
+      const strong = await scrapingBeeFetch(url, mode, 22_000);
+      if (strong && !looksBlocked(strong.status, strong.html)) {
+        ({ status, html, finalUrl } = strong);
+        renderedVia = `scrapingbee-${mode}`;
       }
     }
   }

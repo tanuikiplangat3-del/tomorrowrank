@@ -220,7 +220,7 @@ export async function crawlSite(
   const batchable = toFetch.filter(() => true);
   await pool(batchable, concurrency, async (u) => {
     // Proxied fetches are slower, so allow more time per page when proxying.
-    const perPage = proxy === "none" ? batchTimeout : 30_000;
+    const perPage = proxy === "none" ? batchTimeout : 18_000;
     if (remaining() < 4_000) { truncated = true; return; }
     try {
       const r = await fetchText(u, Math.min(perPage, remaining() - 2000), proxy);

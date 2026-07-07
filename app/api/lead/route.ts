@@ -87,15 +87,13 @@ export async function POST(req: NextRequest) {
     // push fails. Redis is a silent backup — Attio is the real CRM.
     await saveLead(lead);
 
-    // Push to Attio (primary CRM): upsert Person on email -> create Deal at
-    // "Captured" -> link. Best-effort: a CRM hiccup must never block the user,
-    // and the lead is safely in the backup above for re-push if needed.
+    // Push to Attio in the BACKGROUND (not awaited): the CRM push must never
+    // delay the user or the audit. The lead is already saved above, so if the
+    // push fails we still have it. (upsert Person -> create Deal at "Captured".)
     if (attioConfigured()) {
-      try {
-        await pushLeadToAttio(lead);
-      } catch (err) {
+      void pushLeadToAttio(lead).catch((err) => {
         console.error("[lead] Attio push failed (lead saved to backup):", err);
-      }
+      });
     }
 
     return NextResponse.json({ ok: true, leadId: lead.id });
