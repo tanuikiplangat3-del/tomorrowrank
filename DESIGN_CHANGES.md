@@ -287,3 +287,57 @@ by hiding the popup — the /api/audit/start call happens only after /api/lead s
   (/ranktomorrow/_next/image) fails silently in the standalone container (no sharp),
   so the logo 404'd. Serving images unoptimized (direct from /public) fixes it.
 - No other changes. Rebuild image → push to ECR → new task-def revision → update service.
+
+---
+
+## Update 15 — CTA revamp: unblur detail, "Click to receive report", "Book a discovery call"
+
+- **Removed blur** entirely from BlurGate (Site Audit issue detail + AI Visibility probes). Content now shows for all viewers; external viewers get a "Click to receive report" CTA appended below.
+- **New ReportButton** ("Click to receive report") in Gate.tsx → POSTs to new stub `/api/report/request`. Currently acknowledges only. HOOKS documented for the real flow: (1) email report via Resend, (2) move lead Captured→Nurturing in Attio (upsert Person by email → advance SEO Deal only if still Captured). Both blocked on Resend account + Attio API key/IDs (Victor).
+- **"not checked" section** CTA changed from "Engage an expert" → ReportButton "Click to receive report".
+- **Footer "Ready to fix these?"** CTA changed to **"Book a discovery call"**.
+- **BOOKING_URL** now points to Ochuko's Cal page: https://cal.wtlabs-n8n.com/ochuko-adeboye/30min (booking→Attio handled by existing n8n backend, matched on email — not by this app).
+- New route: app/api/report/request/route.ts (stub with TODO(Resend)/TODO(Attio)).
+- Verified: build compiles; no blur classes remain; CTAs + Cal link present.
+- NOTE: still needs rebuild+redeploy to AWS to go live (batch with logo fix + API keys).
+
+---
+
+## Update 16 — DataForSEO (verified endpoints) + ScrapingBee rendering
+
+### DataForSEO — rewired to the endpoints VERIFIED on the account (not the $100/mo llm_mentions tier)
+- lib/providers/dataforseo-ai.ts REWRITTEN. Now exposes:
+  - `googleAiOverview(keyword, locationCode)` → `serp/google/ai_mode/live/advanced` (~$0.004). Returns {present, citedDomains, references[]} — Feature A (Google AI Overview + who it cites).
+  - `chatGptAnswers(prompts[])` → `ai_optimization/chat_gpt/llm_responses/live` (~$0.004 each, web_search:true). Returns real ChatGPT answers — Feature B (LLM visibility).
+- lib/ai-visibility/engine.ts: `runWithDataForSeo` rewritten to use both — derives prompts via Claude, asks ChatGPT for real answers (probes), checks Google AI Overview for the category (citations), computes share-of-voice/sentiment from the REAL ChatGPT answers, and adds an "Absent from Google AI" headline when the brand isn't cited. Falls back to Claude-only if DataForSEO unset/fails (unchanged).
+- Env: needs DATAFORSEO_LOGIN + DATAFORSEO_PASSWORD. Cost ~ PROMPT_COUNT×$0.004 + $0.004 per audit (FAST_MODE PROMPT_COUNT=2 → ~$0.012/audit). Set USE_DATAFORSEO_AI=false to disable.
+
+### ScrapingBee — JS render + Cloudflare fallback in the crawler
+- lib/seo/fetcher.ts: direct fetch first; if blocked (403/429/503) or thin (<500 chars text / CF challenge markers) AND SCRAPINGBEE_API_KEY set → retry via ScrapingBee basic JS render, then premium_proxy on second failure. Cost control: premium only on escalation.
+- Env: needs SCRAPINGBEE_API_KEY.
+
+### Health check
+- /api/audit/health now also reports DATAFORSEO_PASSWORD + SCRAPINGBEE_API_KEY presence.
+
+### HONEST STATUS
+- Code compiles + type-checks clean. NOT yet tested against live DataForSEO/ScrapingBee accounts (sandbox can't reach them). First real audit after deploy is the true test; minor field-mapping tweaks may be needed once we see live responses.
+- Deploy with new env vars: DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD, SCRAPINGBEE_API_KEY (plus the 6 core keys).
+
+---
+
+## Update 17 — Attio CRM integration wired into lead capture (Option B: 5 prompts)
+
+### Attio (primary CRM; Redis kept as silent backup)
+- lib/store/attio.ts: `attioConfigured()`, `pushLeadToAttio(lead)` = upsert Person on email (PUT assert, matching_attribute=email_addresses) -> create Deal -> link via associated_people. Confirmed slugs from the Victor mapping baked in as defaults:
+  - People: name (personal-name), email_addresses (array, match key), job_title_2 (text)
+  - Deal: website (audited URL), lead_source ("SEO"), stage = "Captured" (status format), associated_people
+- Stage-setting is SELF-HEALING: attempts to set stage="Captured"; if Attio rejects it (wrong label or no write permission to the sales-owned status field), retries creating the Deal WITHOUT the stage so the lead still lands. Never a hard failure, never a lost lead.
+- app/api/lead/route.ts: saves to Redis backup FIRST, then pushes to Attio (best-effort, never blocks the user). Attio failure is logged, lead preserved for re-push.
+- Env: ATTIO_API_KEY (required). All slugs overridable: ATTIO_PEOPLE_OBJECT(people), ATTIO_DEALS_OBJECT(deals), ATTIO_JOBTITLE_ATTR(job_title_2), ATTIO_WEBSITE_ATTR(website), ATTIO_LEAD_SOURCE_ATTR(lead_source), ATTIO_LEAD_SOURCE_VALUE(SEO), ATTIO_STAGE_ATTR(stage), ATTIO_STAGE_CAPTURED(Captured).
+
+### AI Visibility depth — Option B
+- PROMPT_COUNT set to 5 (public lead-gen tool; ~$0.024/audit). Richer AI-visibility picture.
+
+### HONEST STATUS
+- Compiles + type-checks clean. Attio NOT yet tested against the live workspace (sandbox can't reach it). First real capture after deploy confirms: (1) the "Captured" label is exact, (2) the API key has stage-write permission. If either is off, the self-healing fallback still creates Person + Deal (minus stage) and the lead is safe in Redis. Two open business decisions remain (one-Deal-per-person vs new-Deal-each-capture; newsletter opt-in create/drop) — neither blocks capture.
+- Deploy env additions: ATTIO_API_KEY (+ any slug overrides if the live labels differ).

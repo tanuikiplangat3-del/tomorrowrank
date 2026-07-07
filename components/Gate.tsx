@@ -12,9 +12,9 @@
 
 import { createContext, useContext } from "react";
 
-// Single outbound destination for every CTA, so the CRM can attribute the lead
-// to this tool. Swap BOOKING_URL when the real CRM/booking link is provided.
-export const BOOKING_URL = "https://welcometomorrow.typeform.com/to/CeIvTBF5";
+// Discovery-call booking goes to Ochuko's Cal page. The booking -> Attio stage
+// move is handled by the existing n8n backend (matched on email), NOT by this app.
+export const BOOKING_URL = "https://cal.wtlabs-n8n.com/ochuko-adeboye/30min";
 
 // The app runs under a basePath (e.g. /ranktomorrow). Client-side fetch() is NOT
 // auto-prefixed by Next.js, so API calls must go through this helper.
@@ -58,13 +58,56 @@ export function CtaButton({
 }
 
 /**
- * Wraps detail content. For external viewers it blurs the children and overlays
- * a "Book a call" CTA. For internal viewers it renders children as-is.
+ * "Click to receive report" CTA.
+ *
+ * INTENDED FINAL BEHAVIOUR (not yet wired — depends on two unbuilt pieces):
+ *   1. Email the full report to the lead's captured email  -> needs Resend
+ *   2. Move the lead Captured -> Nurturing in Attio         -> needs Attio integration
+ *
+ * Until those exist, this posts to /api/report/request (a stub endpoint) which
+ * currently just acknowledges. When Resend + Attio are ready, implement the
+ * send + stage-move inside that route — the button here won't need to change.
+ */
+export function ReportButton({
+  source,
+  className = "",
+  label = "Click to receive report",
+}: { source: string; className?: string; label?: string }) {
+  async function requestReport() {
+    try {
+      await fetch(apiPath("/api/report/request"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      });
+      // Placeholder UX until the real email+Attio flow lands.
+      alert("Thanks! Your report is on its way to your email.");
+    } catch {
+      alert("Something went wrong — please try again shortly.");
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={requestReport}
+      className={
+        "inline-block rounded-lg bg-wtgreen px-6 py-3 text-sm font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep " +
+        className
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Wraps detail content. Content is now shown unblurred for all viewers. For
+ * external (gated) viewers, a "Click to receive report" CTA is appended below
+ * the detail so they can request the full report by email.
  */
 export function BlurGate({
   children,
   source,
-  label = "Book a quick call with our expert to receive a customized detailed report",
 }: {
   children: React.ReactNode;
   source: string;
@@ -74,18 +117,13 @@ export function BlurGate({
   if (!gated) return <>{children}</>;
 
   return (
-    <div className="relative">
-      {/* Real content, blurred and non-interactive */}
-      <div className="pointer-events-none select-none blur-[6px]" aria-hidden="true">
-        {children}
-      </div>
-      {/* Overlay CTA */}
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-ink/40 p-6 text-center backdrop-blur-[2px]">
+    <div>
+      {children}
+      <div className="mt-4 flex flex-col items-center gap-2 rounded-lg bg-wtgreen/10 p-4 text-center">
         <p className="max-w-md text-sm font-semibold text-paper">
-          The detailed findings are ready. Book a quick call with our expert to receive your
-          customized, detailed report.
+          Want the full findings and recommendations sent to you?
         </p>
-        <CtaButton label="Book a call with our expert" source={source} />
+        <ReportButton source={source} />
       </div>
     </div>
   );

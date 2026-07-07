@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { promises as dns } from "dns";
 import { saveLead, type Lead } from "@/lib/store/leads";
+import { attioConfigured, pushLeadToAttio } from "@/lib/store/attio";
 
 export const runtime = "nodejs";
 
@@ -73,7 +74,20 @@ export async function POST(req: NextRequest) {
       url,
       createdAt: new Date().toISOString(),
     };
+    // Safety net first: store locally so a lead is never lost even if the CRM
+    // push fails. Redis is a silent backup — Attio is the real CRM.
     await saveLead(lead);
+
+    // Push to Attio (primary CRM): upsert Person on email -> create Deal at
+    // "Captured" -> link. Best-effort: a CRM hiccup must never block the user,
+    // and the lead is safely in the backup above for re-push if needed.
+    if (attioConfigured()) {
+      try {
+        await pushLeadToAttio(lead);
+      } catch (err) {
+        console.error("[lead] Attio push failed (lead saved to backup):", err);
+      }
+    }
 
     return NextResponse.json({ ok: true, leadId: lead.id });
   } catch (e: any) {

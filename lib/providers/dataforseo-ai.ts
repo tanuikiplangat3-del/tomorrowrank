@@ -1,14 +1,12 @@
 // lib/providers/dataforseo-ai.ts
-// DataForSEO AI Optimization API — LLM Mentions endpoints.
-// This is used ONLY for AI Visibility (real Google AI Overview + ChatGPT
-// mention/citation data). Keywords & backlinks come from Ahrefs instead.
+// DataForSEO integration using the endpoints VERIFIED on this account:
+//   (A) SERP Google AI Mode (AI Overview) — serp/google/ai_mode/live/advanced
+//       ~"$0.004/call. Returns the AI Overview + the sources it cites.
+//   (B) ChatGPT LLM response — ai_optimization/chat_gpt/llm_responses/live
+//       ~$0.004/call. Returns the actual ChatGPT answer to a prompt.
 //
-// Requires the LLM Mentions subscription to be activated on your DataForSEO
-// account ($100/month minimum top-up, spendable across any DataForSEO API).
 // Auth: HTTP Basic with login:password.
-// Docs: https://docs.dataforseo.com/v3/ai_optimization-llm_mentions-overview/
-//
-// Pricing: $0.1 per request + $0.001 per row (max 1000 rows/request).
+// These replace the earlier llm_mentions endpoints (which needed a $100/mo tier).
 
 const BASE = "https://api.dataforseo.com/v3";
 
@@ -27,7 +25,7 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authHeader() },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -36,115 +34,84 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-export interface LlmMentionRow {
-  query: string;            // the user question / prompt
-  answer: string;           // AI-generated snippet
-  citedSources: string[];   // domains/urls cited (with link)
-  mentionedSources: string[]; // brands/domains named without link
-  aiSearchVolume: number | null;
-  platform: string;         // "google" | "chat_gpt"
+// ---------------------------------------------------------------------------
+// (A) GOOGLE AI OVERVIEW — does Google show an AI answer for this keyword, and
+//     which domains does it cite?
+// ---------------------------------------------------------------------------
+export interface AiOverviewResult {
+  present: boolean;
+  citedDomains: string[];               // unique domains cited
+  references: { domain: string; url: string; title: string }[];
 }
 
-export interface CrossAggRow {
-  target: string;           // brand/domain
-  mentions: number;
-  citations: number;
-  aiSearchVolume: number | null;
-}
-
-const PLATFORM_MAP: Record<string, "google" | "chat_gpt"> = {
-  google: "google",
-  chatgpt: "chat_gpt",
-  chat_gpt: "chat_gpt",
-};
-
-// ---------- SEARCH MENTIONS ----------
-// Detailed mentions for a domain/keyword: full Q&A + cited & non-cited sources.
-// POST /ai_optimization/llm_mentions/search/live
-export async function searchMentions(
-  target: string,
-  locationCode: number,
-  languageName: string,
-  platform: "google" | "chatgpt" = "google",
-  limit = 50
-): Promise<LlmMentionRow[]> {
-  const data = await post("/ai_optimization/llm_mentions/search/live", [
-    {
-      target: [{ domain: target, search_filter: "include" }],
-      platform: PLATFORM_MAP[platform] ?? "google",
-      location_code: locationCode,
-      language_name: languageName,
-      order_by: ["ai_search_volume,desc"],
-      limit,
-    },
-  ]);
-  const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
-  return items.map((it: any) => ({
-    query: it.keyword ?? it.question ?? "",
-    answer: it.answer ?? it.snippet ?? "",
-    citedSources: (it.cited_sources ?? it.references ?? [])
-      .map((s: any) => (s.domain ?? s.url ?? "").toLowerCase())
-      .filter(Boolean),
-    mentionedSources: (it.mentions ?? it.non_cited_results ?? [])
-      .map((s: any) => (s.domain ?? s.title ?? "").toLowerCase())
-      .filter(Boolean),
-    aiSearchVolume: it.ai_search_volume ?? null,
-    platform: it.platform ?? "google",
-  }));
-}
-
-// ---------- CROSS AGGREGATED METRICS ----------
-// Benchmark several brands side-by-side (you + competitors).
-// POST /ai_optimization/llm_mentions/cross_aggregated_metrics/live
-export async function crossAggregatedMetrics(
-  brands: string[],
-  locationCode: number,
-  languageName: string,
-  platform: "google" | "chatgpt" = "google"
-): Promise<CrossAggRow[]> {
-  const data = await post("/ai_optimization/llm_mentions/cross_aggregated_metrics/live", [
-    {
-      targets: brands.map((b) => ({ domain: b })),
-      platform: PLATFORM_MAP[platform] ?? "google",
-      location_code: locationCode,
-      language_name: languageName,
-    },
-  ]);
-  const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
-  return items.map((it: any) => ({
-    target: it.target ?? it.domain ?? "",
-    mentions: it.mentions_count ?? it.mentions ?? 0,
-    citations: it.citations_count ?? it.citations ?? 0,
-    aiSearchVolume: it.ai_search_volume ?? null,
-  }));
-}
-
-// ---------- TOP DOMAINS ----------
-// Which domains appear most for a keyword/topic — reveals real competitors.
-// POST /ai_optimization/llm_mentions/top_domains/live
-export async function topDomainsForKeyword(
+export async function googleAiOverview(
   keyword: string,
   locationCode: number,
-  languageName: string,
-  platform: "google" | "chatgpt" = "google",
-  limit = 10
-): Promise<{ domain: string; mentions: number }[]> {
-  try {
-    const data = await post("/ai_optimization/llm_mentions/top_domains/live", [
-      {
-        target: [{ keyword, search_scope: ["answer"] }],
-        platform: PLATFORM_MAP[platform] ?? "google",
-        location_code: locationCode,
-        language_name: languageName,
-        limit,
-      },
-    ]);
-    const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
-    return items.map((it: any) => ({
-      domain: it.domain ?? "",
-      mentions: it.mentions_count ?? it.mentions ?? 0,
-    }));
-  } catch {
-    return [];
+  languageCode = "en"
+): Promise<AiOverviewResult> {
+  const data = await post("/serp/google/ai_mode/live/advanced", [
+    { keyword, location_code: locationCode, language_code: languageCode, device: "desktop" },
+  ]);
+  const result = data?.tasks?.[0]?.result?.[0];
+  const items = result?.items ?? [];
+  const aiOverview = items.find((it: any) => it.type === "ai_overview");
+  if (!aiOverview) return { present: false, citedDomains: [], references: [] };
+
+  // References live both at the top level and nested inside elements.
+  const refs: { domain: string; url: string; title: string }[] = [];
+  const collect = (arr: any[]) => {
+    for (const r of arr ?? []) {
+      if (r?.domain || r?.url) {
+        refs.push({ domain: (r.domain ?? "").toLowerCase(), url: r.url ?? "", title: r.title ?? "" });
+      }
+    }
+  };
+  collect(aiOverview.references);
+  for (const el of aiOverview.items ?? []) collect(el.references);
+
+  const citedDomains = Array.from(new Set(refs.map((r) => r.domain).filter(Boolean)));
+  return { present: true, citedDomains, references: refs };
+}
+
+// ---------------------------------------------------------------------------
+// (B) CHATGPT ANSWER — what does ChatGPT say when asked this prompt? Returns the
+//     answer text so we can detect whether a brand/competitors are mentioned.
+// ---------------------------------------------------------------------------
+export interface ChatGptAnswer {
+  prompt: string;
+  answer: string;
+}
+
+export async function chatGptAnswer(
+  prompt: string,
+  model = "gpt-4o-mini"
+): Promise<ChatGptAnswer> {
+  const data = await post("/ai_optimization/chat_gpt/llm_responses/live", [
+    {
+      user_prompt: prompt,
+      model_name: model,
+      max_output_tokens: 1024,
+      system_message: "You are a helpful assistant that provides accurate information.",
+      web_search: true,
+    },
+  ]);
+  const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+  // The answer is in the "message" item's text section(s).
+  let answer = "";
+  for (const it of items) {
+    if (it.type === "message") {
+      for (const sec of it.sections ?? []) {
+        if (sec.type === "text" && sec.text) answer += sec.text + "\n";
+      }
+    }
   }
+  return { prompt, answer: answer.trim() };
+}
+
+// Ask several prompts in parallel; return their answers (best-effort).
+export async function chatGptAnswers(prompts: string[]): Promise<ChatGptAnswer[]> {
+  const results = await Promise.allSettled(prompts.map((p) => chatGptAnswer(p)));
+  return results
+    .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
+    .map((r) => r.value);
 }

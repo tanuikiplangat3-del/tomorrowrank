@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import type { SiteIssue, CrawlMeta } from "@/types/audit";
-import { BlurGate, CtaButton } from "./Gate";
+import { BlurGate, ReportButton } from "./Gate";
 
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
 
@@ -85,7 +85,7 @@ export function SiteIssues({ issues, meta }: { issues: SiteIssue[]; meta?: Crawl
               ))}
             </ul>
             <div className="mt-4">
-              <CtaButton label="Engage an expert for better results" source="not-checked" className="w-full text-center" />
+              <ReportButton source="not-checked" className="w-full text-center" />
             </div>
           </div>
         )}

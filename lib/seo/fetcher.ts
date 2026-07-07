@@ -68,6 +68,48 @@ async function safeFetch(url: string, opts: RequestInit = {}) {
   });
 }
 
+// ScrapingBee fallback for JS-rendered or bot-protected (e.g. Cloudflare) sites.
+// Only used when a direct fetch is blocked or returns near-empty HTML, to keep
+// credit usage down. Basic JS render by default; premium proxy on retry.
+export function scrapingBeeConfigured(): boolean {
+  return !!process.env.SCRAPINGBEE_API_KEY;
+}
+
+async function scrapingBeeFetch(url: string, premium = false): Promise<{ status: number; html: string; finalUrl: string } | null> {
+  const key = process.env.SCRAPINGBEE_API_KEY;
+  if (!key) return null;
+  const params = new URLSearchParams({
+    api_key: key,
+    url,
+    render_js: "true",
+  });
+  if (premium) {
+    // Escalation for tough anti-bot sites (Cloudflare, etc.) — costs more credits.
+    params.set("premium_proxy", "true");
+    params.set("country_code", "us");
+  }
+  try {
+    const res = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
+      signal: AbortSignal.timeout(60_000),
+    });
+    const html = await res.text();
+    if (!res.ok) return null;
+    return { status: 200, html, finalUrl: url };
+  } catch {
+    return null;
+  }
+}
+
+// A response is "blocked/thin" if the status is a bot-block code or the HTML is
+// suspiciously short (typical of a JS-only shell or a challenge page).
+function looksBlockedOrThin(status: number, html: string): boolean {
+  if (status === 403 || status === 429 || status === 503) return true;
+  const text = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  if (text.length < 500) return true; // almost no readable content -> likely JS-rendered
+  if (/just a moment|checking your browser|cf-browser-verification|enable javascript/i.test(html)) return true;
+  return false;
+}
+
 function textBetween(html: string, re: RegExp): string | null {
   const m = html.match(re);
   return m ? m[1].trim() : null;
@@ -140,9 +182,47 @@ function metaContent(
 
 export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   const url = rawUrl.startsWith("http") ? rawUrl : `https://${rawUrl}`;
-  const res = await safeFetch(url);
-  const finalUrl = res.url || url;
-  const html = await res.text();
+
+  let finalUrl = url;
+  let status = 0;
+  let html = "";
+  let renderedVia = "direct";
+  let respHeaders: Headers | null = null;
+
+  // 1. Try a normal, cheap direct fetch first.
+  try {
+    const res = await safeFetch(url);
+    finalUrl = res.url || url;
+    status = res.status;
+    html = await res.text();
+    respHeaders = res.headers;
+  } catch {
+    status = 0;
+    html = "";
+  }
+
+  // 2. If blocked or thin (JS-only shell / Cloudflare challenge), retry via
+  //    ScrapingBee — basic JS render first, then premium proxy if still blocked.
+  if (scrapingBeeConfigured() && looksBlockedOrThin(status, html)) {
+    const basic = await scrapingBeeFetch(url, false);
+    if (basic && !looksBlockedOrThin(basic.status, basic.html)) {
+      ({ status, html, finalUrl } = basic);
+      renderedVia = "scrapingbee";
+    } else {
+      const premium = await scrapingBeeFetch(url, true);
+      if (premium && !looksBlockedOrThin(premium.status, premium.html)) {
+        ({ status, html, finalUrl } = premium);
+        renderedVia = "scrapingbee-premium";
+      } else if (basic) {
+        // Use whatever basic returned rather than nothing.
+        ({ status, html, finalUrl } = basic);
+        renderedVia = "scrapingbee";
+      }
+    }
+  }
+
+  const res = { url: finalUrl, status } as { url: string; status: number };
+  void renderedVia; // reserved for future reporting of render method
   const origin = new URL(finalUrl).origin;
   const host = new URL(finalUrl).hostname;
 
@@ -275,6 +355,6 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
     sitemap: sitemapXml.status === "fulfilled" ? sitemapXml.value : false,
     llmsTxt: llms.status === "fulfilled" ? llms.value : false,
     http2: true, // Vercel/most hosts serve HTTP/2; refined via response in real infra
-    compression: res.headers.get("content-encoding"),
+    compression: respHeaders?.get("content-encoding") ?? null,
   };
 }

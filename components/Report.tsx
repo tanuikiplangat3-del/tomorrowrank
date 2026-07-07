@@ -111,7 +111,7 @@ export function Report({
         </h2>
         <p className="mt-2 text-muted">Welcome Tomorrow can implement every recommendation in this report.</p>
         <div className="mt-5">
-          <CtaButton label="Book a quick call with our expert" source="report-footer" className="px-7 py-3 text-base" />
+          <CtaButton label="Book a discovery call" source="report-footer" className="px-7 py-3 text-base" />
         </div>
       </section>
     </div>

@@ -20,6 +20,9 @@ export async function GET() {
     // Optional providers
     ANTHROPIC_API_KEY: present(process.env.ANTHROPIC_API_KEY),
     DATAFORSEO_LOGIN: present(process.env.DATAFORSEO_LOGIN),
+    DATAFORSEO_PASSWORD: present(process.env.DATAFORSEO_PASSWORD),
+    SCRAPINGBEE_API_KEY: present(process.env.SCRAPINGBEE_API_KEY),
+    ATTIO_API_KEY: present(process.env.ATTIO_API_KEY),
     PAGESPEED_API_KEY: present(process.env.PAGESPEED_API_KEY),
   };
 

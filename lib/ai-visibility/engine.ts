@@ -20,10 +20,8 @@ import {
 } from "@/lib/providers/llm";
 import {
   dataForSeoConfigured,
-  searchMentions,
-  crossAggregatedMetrics,
-  topDomainsForKeyword,
-  type LlmMentionRow,
+  googleAiOverview,
+  chatGptAnswers,
 } from "@/lib/providers/dataforseo-ai";
 import { resolveLocation } from "@/lib/locations";
 
@@ -34,10 +32,12 @@ interface BrandContext {
   prompts: string[];           // buyer-intent prompts to probe
 }
 
-// When FAST_MODE is on (recommended for Vercel Hobby / 60s limit), we probe
-// fewer prompts and poll Claude-only in parallel so the whole step fits the window.
-const FAST_MODE = process.env.FAST_MODE !== "false"; // default ON
-const PROMPT_COUNT = FAST_MODE ? 2 : 6;
+// Public tool: richer AI-visibility picture (Option B). 5 buyer-intent prompts
+// per audit gives a convincing result. Cost ~ 5 x $0.004 + AI Overview ~$0.004
+// = ~$0.024/audit — fine for a lead-gen tool. Tune PROMPT_COUNT to trade
+// depth vs cost.
+const FAST_MODE = process.env.FAST_MODE !== "false"; // parallel polling, still on
+const PROMPT_COUNT = 5;
 
 // Step 1+2: derive category, competitors, and probe prompts from the site.
 async function deriveContext(
@@ -232,7 +232,8 @@ Return JSON:
 }
 
 // ============================================================
-// PRIMARY PATH: DataForSEO LLM Mentions (real AI Overview / ChatGPT data)
+// PRIMARY PATH: DataForSEO — real ChatGPT answers + real Google AI Overview
+// (uses the endpoints verified on this account, not the llm_mentions tier).
 // ============================================================
 async function runWithDataForSeo(
   brand: string,
@@ -241,137 +242,75 @@ async function runWithDataForSeo(
   onStage?: (stage: string, progress: number) => void
 ): Promise<AiVisibilityReport> {
   const loc = resolveLocation(country);
+  const locationCode = loc.locationCode ?? 2840;
 
-  // 1. Derive market context (category, competitors, probe prompts) via Claude.
+  // 1. Derive market context (category, competitors, buyer-intent prompts).
   onStage?.("Mapping your market & competitors", 10);
   const ctx = await deriveContext(brand, country, pageText);
 
-  // 2. Pull REAL mentions for the brand from Google AI Overviews.
-  onStage?.("Reading real AI Overview & ChatGPT mentions", 35);
-  let mentions: LlmMentionRow[] = [];
+  // 2. FEATURE B — ask ChatGPT the real buyer-intent prompts (via DataForSEO).
+  onStage?.("Asking ChatGPT what it recommends", 35);
+  const gptAnswers = await chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT));
+
+  // 3. FEATURE A — check the real Google AI Overview for the brand's category.
+  onStage?.("Reading Google AI Overview citations", 60);
+  let aiOverview: Awaited<ReturnType<typeof googleAiOverview>> = {
+    present: false, citedDomains: [], references: [],
+  };
   try {
-    mentions = await searchMentions(brand, loc.locationCode ?? 2840, "English", "google", 50);
+    aiOverview = await googleAiOverview(ctx.category, locationCode);
   } catch {
-    /* brand may simply have no mentions yet */
+    /* no AI overview / call failed */
   }
 
-  // 3. Benchmark brand vs competitors side-by-side (cross-aggregated metrics).
-  onStage?.("Measuring share of voice vs competitors", 60);
-  const brands = [brand, ...ctx.competitors];
-  let cross: Awaited<ReturnType<typeof crossAggregatedMetrics>> = [];
-  try {
-    cross = await crossAggregatedMetrics(brands, loc.locationCode ?? 2840, "English", "google");
-  } catch {
-    /* fall through to deriving shares from `mentions` + top domains */
-  }
+  // 4. Probes from the REAL ChatGPT answers.
+  const brandStem = brand.toLowerCase().split(".")[0];
+  const probes = gptAnswers.map((a) => ({
+    engine: "ChatGPT",
+    prompt: a.prompt,
+    answer: (a.answer || "").slice(0, 600),
+    brandCited: (a.answer || "").toLowerCase().includes(brandStem),
+  }));
 
-  // If cross-agg came back empty, derive competitor mentions from top domains
-  // for the brand's main prompts.
-  if (cross.length === 0 && ctx.prompts.length) {
-    const td = await topDomainsForKeyword(ctx.prompts[0], loc.locationCode ?? 2840, "English", "google", 10);
-    cross = td.map((d) => ({
-      target: d.domain,
-      mentions: d.mentions,
-      citations: 0,
-      aiSearchVolume: null,
-    }));
-  }
+  // 5. Citations = the real domains Google's AI Overview cited.
+  const citations = aiOverview.references.slice(0, 30).map((r) => ({
+    url: r.url,
+    title: r.title || r.domain,
+    brandCited: r.domain.includes(brandStem),
+  }));
 
-  // 4. Build share of voice from real mention counts.
-  const totalMentions = cross.reduce((a, c) => a + c.mentions, 0) || 1;
-  const shares: BrandShare[] = cross
-    .map((c) => ({
-      brand: c.target,
-      isClient: c.target.toLowerCase().includes(brand.toLowerCase().split(".")[0]),
-      sharePct: Math.round((c.mentions / totalMentions) * 100),
-      sentimentScore: 60, // refined by Claude below
-      mentions: c.mentions,
-    }))
-    .sort((a, b) => b.sharePct - a.sharePct);
+  // 6. Share of voice + sentiment, judged by Claude from the REAL answers.
+  onStage?.("Scoring share of voice & sentiment", 80);
+  const answersForJudge = gptAnswers.map((a) => ({ engine: "ChatGPT", text: a.answer, prompt: a.prompt }));
+  const judged =
+    answersForJudge.length > 0
+      ? await computeShareAndSentiment(brand, ctx.competitors, answersForJudge)
+      : { shares: [{ brand, isClient: true, sharePct: 0, sentimentScore: 0, mentions: 0 }] as BrandShare[],
+          sentiment: { hasMentions: false, positivePct: 0, neutralPct: 0, negativePct: 0, summary: "" } };
+  const shares = judged.shares;
+  const sentiment = judged.sentiment;
 
-  // Ensure the client brand always appears (even at 0%).
-  if (!shares.some((s) => s.isClient)) {
-    shares.push({ brand, isClient: true, sharePct: 0, sentimentScore: 0, mentions: 0 });
-  }
-
-  // 5. Use Claude to score sentiment from the actual answer snippets + write insights.
-  onStage?.("Scoring sentiment & generating insights", 85);
-  const corpus = mentions.map((m) => `Q: ${m.query}\nA: ${m.answer}`).join("\n\n").slice(0, 12000);
-  const sentiment = await scoreSentimentFromCorpus(brand, corpus, mentions.length > 0);
-
-  // refine per-brand sentiment if we have snippets
-  if (mentions.length > 0) {
-    for (const s of shares) {
-      if (s.isClient) s.sentimentScore = sentiment.clientScore;
-    }
-  }
-
+  onStage?.("Generating strategy insights", 92);
   const { insights, headline } = await buildInsights(brand, country, shares);
 
-  // Citations summary → add a headline note if the brand is cited anywhere.
-  const citedCount = mentions.filter((m) =>
-    m.citedSources.some((src) => src.includes(brand.toLowerCase().split(".")[0]))
-  ).length;
+  const aiHeadline = aiOverview.present && !aiOverview.citedDomains.some((d) => d.includes(brandStem))
+    ? { tag: "Absent from Google AI", text: `Google shows an AI Overview for "${ctx.category}" citing ${aiOverview.citedDomains.length} sources - ${brand} is not one of them. ${headline.text}` }
+    : headline;
 
   onStage?.("Finalising AI visibility report", 98);
   return {
     clientBrand: brand,
     competitors: ctx.competitors,
     shareOfVoice: shares,
-    overallSentiment: sentiment.overall,
-    headline: citedCount > 0
-      ? { tag: "Cited in AI answers", text: `${brand} is cited in ${citedCount} AI Overview answer(s). ${headline.text}` }
-      : headline,
+    overallSentiment: sentiment,
+    headline: aiHeadline,
     insights,
-    modelsQueried: ["Google AI Overview", "ChatGPT (via DataForSEO)"],
+    modelsQueried: ["ChatGPT (DataForSEO)", "Google AI Overview (DataForSEO)"],
+    citations,
+    probes,
   };
 }
 
-// Claude scores sentiment from the real answer corpus.
-async function scoreSentimentFromCorpus(
-  brand: string,
-  corpus: string,
-  hasMentions: boolean
-): Promise<{
-  overall: AiVisibilityReport["overallSentiment"];
-  clientScore: number;
-}> {
-  if (!hasMentions) {
-    return {
-      overall: { hasMentions: false, positivePct: 0, neutralPct: 0, negativePct: 0, summary: "" },
-      clientScore: 0,
-    };
-  }
-  try {
-    const r = await claudeJSON<{
-      positivePct: number; neutralPct: number; negativePct: number;
-      summary: string; clientScore: number;
-    }>({
-      model: MODELS.judge,
-      system: "You analyse how AI engines talk about a brand and score the sentiment of those mentions.",
-      prompt: `Brand: ${brand}
-AI answer snippets that mention the brand or its space:
-"""${corpus}"""
-Return JSON: {"positivePct":<0-100>,"neutralPct":<0-100>,"negativePct":<0-100>,"summary":"<one sentence>","clientScore":<0-100 overall sentiment toward ${brand}>}`,
-      maxTokens: 600,
-    });
-    return {
-      overall: {
-        hasMentions: true,
-        positivePct: r.positivePct,
-        neutralPct: r.neutralPct,
-        negativePct: r.negativePct,
-        summary: r.summary,
-      },
-      clientScore: r.clientScore,
-    };
-  } catch {
-    return {
-      overall: { hasMentions: true, positivePct: 50, neutralPct: 40, negativePct: 10, summary: "" },
-      clientScore: 60,
-    };
-  }
-}
 
 // ============================================================
 // FALLBACK PATH: Claude-only polling (no DataForSEO subscription)
