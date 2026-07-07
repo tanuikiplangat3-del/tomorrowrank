@@ -46,6 +46,57 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   const stopPoll = () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
   useEffect(() => () => stopPoll(), []);
 
+  // Persist the current job id in the URL (?job=…) so a page refresh — e.g. after
+  // a dropped connection — restores the SAME dashboard from storage instead of
+  // wiping it and forcing a re-audit.
+  const setJobParam = (jobId: string | null) => {
+    if (typeof window === "undefined") return;
+    const u = new URL(window.location.href);
+    if (jobId) u.searchParams.set("job", jobId);
+    else u.searchParams.delete("job");
+    window.history.replaceState(null, "", u.toString());
+  };
+
+  const pollJob = useCallback((jobId: string) => {
+    stopPoll();
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
+        const j: AuditJob = await readJson(r);
+        setJob(j);
+        if (j.status === "done") { stopPoll(); setPhase("done"); }
+        if (j.status === "error") { stopPoll(); setError(j.error || "Audit failed"); setPhase("error"); }
+      } catch (e: any) {
+        stopPoll();
+        setError(e.message || "Lost connection to the audit.");
+        setPhase("error");
+      }
+    }, 2500);
+  }, []);
+
+  // On mount: if the URL has ?job=…, restore that audit (running or finished)
+  // rather than starting from a blank form. This makes refresh non-destructive.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const jobId = new URL(window.location.href).searchParams.get("job");
+    if (!jobId) return;
+    setPhase("processing");
+    (async () => {
+      try {
+        const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
+        const j: AuditJob = await readJson(r);
+        setJob(j);
+        if (j.status === "done") { setPhase("done"); return; }
+        if (j.status === "error") { setError(j.error || "Audit failed"); setPhase("error"); return; }
+        pollJob(jobId); // still running — resume the progress bar
+      } catch {
+        setJobParam(null); // job expired/not found — fall back to the form
+        setPhase("input");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollJob]);
+
   // Clicking Audit first opens the lead gate (unless internal or already verified).
   const start = useCallback(() => {
     setError(null);
@@ -65,25 +116,13 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to start audit");
       const jobId = data.jobId as string;
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
-          const j: AuditJob = await readJson(r);
-          setJob(j);
-          if (j.status === "done") { stopPoll(); setPhase("done"); }
-          if (j.status === "error") { stopPoll(); setError(j.error || "Audit failed"); setPhase("error"); }
-        } catch (e: any) {
-          stopPoll();
-          setError(e.message || "Lost connection to the audit.");
-          setPhase("error");
-        }
-      }, 2500);
+      setJobParam(jobId); // persist so refresh restores this audit
+      pollJob(jobId);
     } catch (e: any) {
       setError(e.message);
       setPhase("error");
     }
-  }, [url, country, language, keyword]);
+  }, [url, country, language, keyword, internal, pollJob]);
 
   if (phase === "done" && job?.report) {
     return (

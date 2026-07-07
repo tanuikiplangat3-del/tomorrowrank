@@ -376,3 +376,17 @@ All compile + typecheck clean. Requires rebuild + redeploy.
 
 ## STILL TO DO (next focused build) — Update 20
 - Resend + Claude-generated PDF report emailing from seo@welcometomorrow.io on "Click to receive report", still creating the Attio lead. RESEND_API_KEY ready. Being done as its own build (new dependency, can't be tested from sandbox).
+
+---
+
+## Update 20 — CTA polish, refresh-safe dashboard, regional scope, Cloudflare depth
+
+1. **Smaller mismatch CTA + Edit email.** LeadGate mismatch block is now compact: a small "Contact to verify →" button beside an "Edit email" button (clears the email so they can retype). No more oversized full-width button.
+2. **Refresh-safe report.** AuditApp now persists the job id in the URL (?job=…) via history.replaceState. On mount it restores that job from storage — a refresh (or a reconnect after lost internet) re-shows the SAME dashboard instead of wiping to a blank form. Expired/not-found jobs fall back to the form gracefully. No re-audit on refresh.
+3. **Regional/market scope detection.** deriveContext now asks Claude to determine the brand's REAL geographic scope (city / country / region like "Africa" / global) from the site content, and scopes competitors + buyer-intent prompts to that scope — so an Africa-wide brand (e.g. Welcome Tomorrow) gets "…in Africa" prompts, not "…in Kenya". Added `scope` to BrandContext.
+4. **Cloudflare: main page now gets through.** fetchPageSignals escalates a blocked main page to ScrapingBee PREMIUM proxy (25s) so real content + internal links are read (fixes "blocked by Cloudflare, only home page"). Crawl stays cheap direct-fetch by default; set CRAWL_VIA_SCRAPINGBEE=true to also route crawl pages through ScrapingBee premium for protected sites (opt-in; costs credits/time; still time-boxed by the watchdog).
+
+All compile + typecheck clean. Requires rebuild + redeploy.
+Note: for deep internal crawls of protected sites, combine CRAWL_VIA_SCRAPINGBEE=true with a larger AUDIT_BUDGET_MS.
+
+## STILL TO DO — Resend + Claude PDF report email (its own build).

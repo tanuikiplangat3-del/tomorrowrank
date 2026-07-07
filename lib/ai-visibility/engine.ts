@@ -28,6 +28,7 @@ import { resolveLocation } from "@/lib/locations";
 interface BrandContext {
   brand: string;
   category: string;            // e.g. "growth marketing agency"
+  scope?: string;              // real market scope, e.g. "Africa", "Kenya", "global"
   competitors: string[];
   prompts: string[];           // buyer-intent prompts to probe
 }
@@ -48,17 +49,20 @@ async function deriveContext(
   const ctx = await claudeJSON<BrandContext>({
     model: MODELS.judge,
     system:
-      "You analyse a company website and produce its market context for an AI-visibility audit. Be specific to the brand's real category and geography.",
+      "You analyse a company website and produce its market context for an AI-visibility audit. First determine the brand's real GEOGRAPHIC SCOPE from its own content — do not assume it only serves the visitor's country. A brand may be city/local, national, regional (e.g. 'East Africa', 'Africa', 'the Gulf', 'Southeast Asia'), or global. Then make the category, competitors, and buyer-intent prompts match that real scope.",
     prompt: `Brand domain: ${brand}
-Target market: ${country}
+Visitor's country (for reference only — the brand may serve a wider area): ${country}
 Homepage text (truncated): """${pageText.slice(0, 6000)}"""
+
+Determine the brand's real market scope from what the site actually says about who it serves. If the site positions itself continent- or region-wide (e.g. "we help brands across Africa"), the scope is that region, NOT the visitor's single country. If it clearly serves one country or city, use that.
 
 Return JSON:
 {
  "brand": "${brand}",
+ "scope": "<the brand's real market, e.g. 'Africa', 'East Africa', 'Kenya', 'global', 'London UK'>",
  "category": "<the brand's specific service category, e.g. 'growth marketing agency'>",
- "competitors": [<5-7 real, named competitors a buyer in ${country} would consider>],
- "prompts": [<${PROMPT_COUNT} natural buyer-intent questions a user would ask ChatGPT/Claude when looking for this kind of service in ${country}; do NOT mention ${brand} in the prompts>]
+ "competitors": [<5-7 real, named competitors a buyer in that SCOPE would actually consider — regional/global players if the scope is regional/global, not only local ones>],
+ "prompts": [<${PROMPT_COUNT} natural buyer-intent questions someone in that SCOPE would ask ChatGPT/Claude when looking for this kind of service; phrase them for the real scope (e.g. "...in Africa" not "...in Kenya" when the brand is Africa-wide); do NOT mention ${brand} in the prompts>]
 }`,
     maxTokens: 1200,
     webSearch: false,

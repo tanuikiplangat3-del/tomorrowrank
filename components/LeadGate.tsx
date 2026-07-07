@@ -96,27 +96,28 @@ export function LeadGate({
           {error && <p className="text-sm font-medium text-bad">{error}</p>}
 
           {mismatch ? (
-            <div className="mt-1 space-y-3 rounded-lg border border-wtgreen/40 bg-wtgreen/10 p-4">
+            <div className="mt-1 space-y-2.5 rounded-lg border border-wtgreen/40 bg-wtgreen/10 p-3.5">
               <p className="text-sm font-semibold text-paper">
                 That email doesn&apos;t match {siteHost(url) ?? "the site"}.
               </p>
               <p className="text-xs leading-relaxed text-muted">
-                To keep audits genuine, we send reports to a company email on the same domain as the
-                site being audited. If you work with {siteHost(url) ?? "this site"} but use a different
-                email, contact us and we&apos;ll verify you.
+                We send reports to a company email on the same domain as the site being audited. If you
+                work with {siteHost(url) ?? "this site"} but use a different email, contact us to verify.
               </p>
-              <a
-                href={contactHref}
-                className="block w-full rounded-lg bg-wtgreen px-6 py-3 text-center text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep"
-              >
-                Contact Welcome Tomorrow to verify →
-              </a>
-              <button
-                onClick={() => setMismatch(false)}
-                className="w-full text-center text-xs text-muted underline hover:text-paper"
-              >
-                Use a different email
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <a
+                  href={contactHref}
+                  className="flex-1 rounded-md bg-wtgreen px-4 py-2 text-center text-sm font-semibold text-paper transition hover:bg-wtgreenDeep"
+                >
+                  Contact to verify →
+                </a>
+                <button
+                  onClick={() => { setMismatch(false); setEmail(""); }}
+                  className="flex-1 rounded-md border border-glassBorder px-4 py-2 text-center text-sm font-semibold text-paper transition hover:border-wtgreen"
+                >
+                  Edit email
+                </button>
+              </div>
             </div>
           ) : (
             <button

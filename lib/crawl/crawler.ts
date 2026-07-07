@@ -70,7 +70,35 @@ async function fetchText(url: string, timeoutMs: number): Promise<{ status: numb
     signal: AbortSignal.timeout(timeoutMs),
   });
   const body = await res.text();
-  return { status: res.status, body, finalUrl: (res as any).url || url };
+  const out = { status: res.status, body, finalUrl: (res as any).url || url };
+
+  // Opt-in: on bot-protected sites (Cloudflare etc.) the direct crawl fetch gets
+  // 403/503. If CRAWL_VIA_SCRAPINGBEE=true and a key is set, retry the page via
+  // ScrapingBee so protected sites can be crawled beyond the home page. Off by
+  // default because routing many pages through a proxy costs credits + time.
+  const useBee =
+    process.env.CRAWL_VIA_SCRAPINGBEE === "true" && !!process.env.SCRAPINGBEE_API_KEY;
+  const blocked = out.status === 403 || out.status === 429 || out.status === 503;
+  if (useBee && blocked) {
+    try {
+      const params = new URLSearchParams({
+        api_key: process.env.SCRAPINGBEE_API_KEY!,
+        url,
+        render_js: "true",
+        premium_proxy: "true",
+      });
+      const r = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
+        signal: AbortSignal.timeout(Math.max(8000, Math.min(timeoutMs, 20000))),
+      });
+      if (r.ok) {
+        const beeBody = await r.text();
+        return { status: 200, body: beeBody, finalUrl: url };
+      }
+    } catch {
+      /* fall through to the original (blocked) result */
+    }
+  }
+  return out;
 }
 
 // Parse <loc> entries from a sitemap or sitemap index (recurses one level).

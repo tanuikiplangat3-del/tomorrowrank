@@ -202,14 +202,25 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   }
 
   // 2. If the site genuinely BLOCKED the bot (403/429/503 or a Cloudflare
-  //    challenge), retry ONCE via ScrapingBee with a short timeout. We do not
-  //    escalate to premium here — a single fast attempt keeps the audit within
-  //    its time budget. (Merely-short pages are NOT retried.)
+  //    challenge), retry via ScrapingBee. For the MAIN page it's worth escalating
+  //    to the premium proxy to get through Cloudflare (so we read real content +
+  //    internal links). This runs only for the primary audited page — the crawl
+  //    uses cheap direct fetches — so cost/time stays controlled.
   if (scrapingBeeConfigured() && looksBlocked(status, html)) {
-    const rendered = await scrapingBeeFetch(url, false, 15_000);
-    if (rendered && !looksBlocked(rendered.status, rendered.html)) {
-      ({ status, html, finalUrl } = rendered);
+    const basic = await scrapingBeeFetch(url, false, 15_000);
+    if (basic && !looksBlocked(basic.status, basic.html)) {
+      ({ status, html, finalUrl } = basic);
       renderedVia = "scrapingbee";
+    } else {
+      // Still blocked (e.g. Cloudflare challenge) — escalate to premium proxy.
+      const premium = await scrapingBeeFetch(url, true, 25_000);
+      if (premium && !looksBlocked(premium.status, premium.html)) {
+        ({ status, html, finalUrl } = premium);
+        renderedVia = "scrapingbee-premium";
+      } else if (basic) {
+        ({ status, html, finalUrl } = basic); // use whatever we got
+        renderedVia = "scrapingbee";
+      }
     }
   }
 
