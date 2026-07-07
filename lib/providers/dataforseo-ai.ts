@@ -25,7 +25,7 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authHeader() },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(90_000),
+    signal: AbortSignal.timeout(35_000),
   });
   if (!res.ok) {
     const text = await res.text();

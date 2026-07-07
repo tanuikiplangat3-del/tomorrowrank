@@ -1,5 +1,4 @@
 // components/Landing.tsx — shared landing shell for external (/) and internal (/seo) entry.
-import Image from "next/image";
 import { AuditApp } from "@/components/AuditApp";
 
 export function Landing({ internal = false }: { internal?: boolean }) {
@@ -9,12 +8,15 @@ export function Landing({ internal = false }: { internal?: boolean }) {
       <nav className="relative z-10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
           <a href="https://welcometomorrow.io" className="flex items-center" aria-label="Welcome Tomorrow">
-            <Image
-              src="/welcome-tomorrow-logo.png"
+            {/* Plain <img> with the basePath-prefixed path. next/image + unoptimized
+                + basePath can drop the /ranktomorrow prefix and 404 the logo, so we
+                reference the served path directly (confirmed reachable). */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/ranktomorrow/welcome-tomorrow-logo.png"
               alt="Welcome Tomorrow"
               width={362}
               height={117}
-              priority
               className="h-9 w-auto md:h-10"
             />
           </a>

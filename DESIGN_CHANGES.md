@@ -341,3 +341,25 @@ by hiding the popup — the /api/audit/start call happens only after /api/lead s
 ### HONEST STATUS
 - Compiles + type-checks clean. Attio NOT yet tested against the live workspace (sandbox can't reach it). First real capture after deploy confirms: (1) the "Captured" label is exact, (2) the API key has stage-write permission. If either is off, the self-healing fallback still creates Person + Deal (minus stage) and the lead is safe in Redis. Two open business decisions remain (one-Deal-per-person vs new-Deal-each-capture; newsletter opt-in create/drop) — neither blocks capture.
 - Deploy env additions: ATTIO_API_KEY (+ any slug overrides if the live labels differ).
+
+---
+
+## Update 18 — Fix regressions from Update 16/17 (thin report, infinite spin, Attio 400)
+
+Root causes found from live AWS logs + code review:
+
+1. **Infinite spin at "Finalising report"** — RACE CONDITION. AI-visibility progress updates are fire-and-forget; a stale "Finalising 98%" write could land AFTER the final "done" write and revert the job to in-progress, so the UI polled forever. FIX: `updateJob` now refuses to overwrite a terminal (done/error) job with a non-terminal patch (lib/store/jobs.ts).
+2. **Belt-and-suspenders:** `saveJob` Upstash write now has a 15s timeout so a stalled write can never hang the audit forever (surfaces a clear error instead).
+3. **Thin report (crawl + AI missing)** — the 50s audit budget (a Vercel-era limit) was too small for the new DataForSEO calls. FIX (env, already deployed): AUDIT_BUDGET_MS=240000. Plus DataForSEO per-call timeout reduced 90s→35s so a slow call can't dominate.
+4. **ScrapingBee over-triggering** — it fired on any page <500 chars and escalated to premium (up to 120s/page), blowing the crawl budget. FIX: only retry on GENUINE blocks (403/429/503 or Cloudflare challenge), single attempt, 15s timeout, no premium escalation during fetch.
+5. **Attio Deal 400 "Cannot find select option 'SEO'"** — the workspace `lead_source` select has no "SEO" option, so the whole Deal create failed. FIX: `createDeal` now tries progressively simpler payloads (full → drop stage → drop lead_source → minimal) and uses the first that succeeds, logging what was dropped. The Deal always lands; add an "SEO" option to lead_source in Attio (or set ATTIO_LEAD_SOURCE_VALUE to an existing option) to populate it.
+
+All compile + typecheck clean. Requires rebuild + redeploy (code changes).
+
+---
+
+## Update 18b — Logo fix (broken-image icon under basePath)
+
+- The logo file serves correctly at /ranktomorrow/welcome-tomorrow-logo.png (confirmed reachable), but next/image with `unoptimized:true` + basePath dropped the /ranktomorrow prefix, so the rendered <img> requested /welcome-tomorrow-logo.png and 404'd (broken-image icon).
+- FIX: components/Landing.tsx now uses a plain <img src="/ranktomorrow/welcome-tomorrow-logo.png"> (removed next/image import). Guaranteed to match the served path.
+- Bundled with Update 18 (spin/thin/Attio fixes) so it all ships in ONE rebuild.

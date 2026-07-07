@@ -53,7 +53,14 @@ export async function saveJob(job: AuditJob): Promise<void> {
   const r = getRedis();
   if (r) {
     try {
-      await r.set(key(job.id), JSON.stringify(job), { ex: TTL_SECONDS });
+      // Guard the write with a timeout so a slow/stalled Upstash request can
+      // never hang the audit forever (which left the UI spinning at "Finalising").
+      await Promise.race([
+        r.set(key(job.id), JSON.stringify(job), { ex: TTL_SECONDS }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Upstash write timed out after 15s")), 15_000)
+        ),
+      ]);
     } catch (e: any) {
       // Surface a clear, actionable error instead of an opaque 500.
       throw new Error(
@@ -90,6 +97,14 @@ export async function updateJob(
 ): Promise<AuditJob | null> {
   const job = await getJob(id);
   if (!job) return null;
+  // Never let a late, fire-and-forget progress update (stage/percent) clobber a
+  // job that has already finished or failed. Without this, a stale "Finalising…"
+  // write could land after the "done" write and revert the job to in-progress,
+  // leaving the UI spinning forever.
+  const patchIsTerminal = patch.status === "done" || patch.status === "error";
+  if ((job.status === "done" || job.status === "error") && !patchIsTerminal) {
+    return job;
+  }
   const next = { ...job, ...patch };
   await saveJob(next);
   return next;

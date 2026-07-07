@@ -75,7 +75,7 @@ export function scrapingBeeConfigured(): boolean {
   return !!process.env.SCRAPINGBEE_API_KEY;
 }
 
-async function scrapingBeeFetch(url: string, premium = false): Promise<{ status: number; html: string; finalUrl: string } | null> {
+async function scrapingBeeFetch(url: string, premium = false, timeoutMs = 15_000): Promise<{ status: number; html: string; finalUrl: string } | null> {
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
   const params = new URLSearchParams({
@@ -90,7 +90,7 @@ async function scrapingBeeFetch(url: string, premium = false): Promise<{ status:
   }
   try {
     const res = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const html = await res.text();
     if (!res.ok) return null;
@@ -100,13 +100,13 @@ async function scrapingBeeFetch(url: string, premium = false): Promise<{ status:
   }
 }
 
-// A response is "blocked/thin" if the status is a bot-block code or the HTML is
-// suspiciously short (typical of a JS-only shell or a challenge page).
-function looksBlockedOrThin(status: number, html: string): boolean {
+// A response is genuinely BLOCKED only when the server refused the bot or served
+// an anti-bot challenge. We deliberately do NOT treat merely-short HTML as blocked
+// — many valid pages are short, and rendering every short page via ScrapingBee
+// blows the audit's time budget (the bug that made reports come back thin).
+function looksBlocked(status: number, html: string): boolean {
   if (status === 403 || status === 429 || status === 503) return true;
-  const text = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-  if (text.length < 500) return true; // almost no readable content -> likely JS-rendered
-  if (/just a moment|checking your browser|cf-browser-verification|enable javascript/i.test(html)) return true;
+  if (/just a moment|checking your browser|cf-browser-verification|attention required|cf-chl/i.test(html)) return true;
   return false;
 }
 
@@ -201,23 +201,15 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
     html = "";
   }
 
-  // 2. If blocked or thin (JS-only shell / Cloudflare challenge), retry via
-  //    ScrapingBee — basic JS render first, then premium proxy if still blocked.
-  if (scrapingBeeConfigured() && looksBlockedOrThin(status, html)) {
-    const basic = await scrapingBeeFetch(url, false);
-    if (basic && !looksBlockedOrThin(basic.status, basic.html)) {
-      ({ status, html, finalUrl } = basic);
+  // 2. If the site genuinely BLOCKED the bot (403/429/503 or a Cloudflare
+  //    challenge), retry ONCE via ScrapingBee with a short timeout. We do not
+  //    escalate to premium here — a single fast attempt keeps the audit within
+  //    its time budget. (Merely-short pages are NOT retried.)
+  if (scrapingBeeConfigured() && looksBlocked(status, html)) {
+    const rendered = await scrapingBeeFetch(url, false, 15_000);
+    if (rendered && !looksBlocked(rendered.status, rendered.html)) {
+      ({ status, html, finalUrl } = rendered);
       renderedVia = "scrapingbee";
-    } else {
-      const premium = await scrapingBeeFetch(url, true);
-      if (premium && !looksBlockedOrThin(premium.status, premium.html)) {
-        ({ status, html, finalUrl } = premium);
-        renderedVia = "scrapingbee-premium";
-      } else if (basic) {
-        // Use whatever basic returned rather than nothing.
-        ({ status, html, finalUrl } = basic);
-        renderedVia = "scrapingbee";
-      }
     }
   }
 

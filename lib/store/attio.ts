@@ -96,19 +96,8 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
   const leadSourceValue = cfg("ATTIO_LEAD_SOURCE_VALUE", "SEO");
   const stageAttr = cfg("ATTIO_STAGE_ATTR", "stage");
   const stageCaptured = cfg("ATTIO_STAGE_CAPTURED", "Captured");
-
   const peopleObject = cfg("ATTIO_PEOPLE_OBJECT", "people");
-  const baseValues: Record<string, unknown> = {
-    name: [{ value: `${lead.company} — SEO audit lead` }],
-  };
-  if (lead.url) baseValues[websiteAttr] = lead.url;
-  if (leadSourceAttr && leadSourceValue) baseValues[leadSourceAttr] = leadSourceValue;
-  if (personId) baseValues["associated_people"] = [{ target_record_id: personId, target_object: peopleObject }];
 
-  // Attio status attributes accept the option's title (or id). We attempt to set
-  // the stage; if Attio rejects it (wrong label or the tool lacks write access to
-  // the sales-owned status field), we retry WITHOUT the stage so the Deal still
-  // lands — the lead is never lost to a stage mismatch.
   async function post(values: Record<string, unknown>) {
     return attio<{ data?: { id?: { record_id?: string } } }>(
       `/objects/${dealsObject}/records`,
@@ -117,17 +106,44 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
     );
   }
 
-  if (stageAttr && stageCaptured) {
+  // Build the Deal from a "full" set of values down to a minimal set. Attio
+  // rejects the WHOLE request if any single select/status value isn't a valid
+  // option in the workspace (e.g. no "SEO" option on lead_source, or the stage
+  // label/permission differs). So we try progressively simpler payloads and use
+  // the first that succeeds — the Deal always lands, just with whatever fields
+  // are valid. Anything dropped is logged so it can be corrected in Attio.
+  const name = [{ value: `${lead.company} — SEO audit lead` }];
+  const link = personId
+    ? { associated_people: [{ target_record_id: personId, target_object: peopleObject }] }
+    : {};
+  const website = lead.url ? { [websiteAttr]: lead.url } : {};
+  const source = leadSourceAttr && leadSourceValue ? { [leadSourceAttr]: leadSourceValue } : {};
+  const stage = stageAttr && stageCaptured ? { [stageAttr]: [{ status: stageCaptured }] } : {};
+
+  // Ordered from most-complete to most-minimal. Each drops one thing likely to
+  // be rejected (stage first, then lead_source), always keeping name/link/website.
+  const attempts: { label: string; values: Record<string, unknown> }[] = [
+    { label: "full", values: { name, ...website, ...source, ...stage, ...link } },
+    { label: "no-stage", values: { name, ...website, ...source, ...link } },
+    { label: "no-stage-no-source", values: { name, ...website, ...link } },
+    { label: "minimal", values: { name, ...link } },
+  ];
+
+  for (const attempt of attempts) {
     try {
-      const withStage = { ...baseValues, [stageAttr]: [{ status: stageCaptured }] };
-      const data = await post(withStage);
+      const data = await post(attempt.values);
+      if (attempt.label !== "full") {
+        console.warn(`[attio] Deal created with reduced fields (${attempt.label}) — check that lead_source has an "${leadSourceValue}" option and the stage "${stageCaptured}" is writable.`);
+      }
       return data?.data?.id?.record_id ?? null;
-    } catch {
-      // Fall through and create the Deal without forcing a stage.
+    } catch (err) {
+      // Try the next, simpler payload.
+      if (attempt.label === "minimal") {
+        console.error("[attio] Deal creation failed even minimally:", err);
+      }
     }
   }
-  const data = await post(baseValues);
-  return data?.data?.id?.record_id ?? null;
+  return null;
 }
 
 /**
