@@ -57,7 +57,40 @@ function sameHost(a: string, b: string): boolean {
   }
 }
 
-async function fetchText(url: string, timeoutMs: number): Promise<{ status: number; body: string; finalUrl: string }> {
+type ProxyMode = "none" | "premium" | "stealth";
+
+function beeUrl(url: string, mode: ProxyMode): string {
+  const params = new URLSearchParams({
+    api_key: process.env.SCRAPINGBEE_API_KEY!,
+    url,
+    render_js: "true",
+  });
+  if (mode === "premium") params.set("premium_proxy", "true");
+  if (mode === "stealth") params.set("stealth_proxy", "true"); // strongest — defeats Cloudflare/WAF
+  return `https://app.scrapingbee.com/api/v1/?${params.toString()}`;
+}
+
+async function fetchText(
+  url: string,
+  timeoutMs: number,
+  proxy: ProxyMode = "none"
+): Promise<{ status: number; body: string; finalUrl: string }> {
+  // When a proxy mode is requested (protected site), go STRAIGHT through
+  // ScrapingBee — no doomed direct hit first. This is what lets a Cloudflare/WAF
+  // site be crawled like a normal site.
+  if (proxy !== "none" && process.env.SCRAPINGBEE_API_KEY) {
+    try {
+      const r = await fetch(beeUrl(url, proxy), {
+        signal: AbortSignal.timeout(Math.max(10_000, Math.min(timeoutMs, 30_000))),
+      });
+      const body = await r.text();
+      if (r.ok) return { status: 200, body, finalUrl: url };
+      return { status: r.status, body, finalUrl: url };
+    } catch {
+      return { status: 0, body: "", finalUrl: url };
+    }
+  }
+
   const res = await fetch(url, {
     redirect: "follow",
     headers: {
@@ -70,35 +103,7 @@ async function fetchText(url: string, timeoutMs: number): Promise<{ status: numb
     signal: AbortSignal.timeout(timeoutMs),
   });
   const body = await res.text();
-  const out = { status: res.status, body, finalUrl: (res as any).url || url };
-
-  // Opt-in: on bot-protected sites (Cloudflare etc.) the direct crawl fetch gets
-  // 403/503. If CRAWL_VIA_SCRAPINGBEE=true and a key is set, retry the page via
-  // ScrapingBee so protected sites can be crawled beyond the home page. Off by
-  // default because routing many pages through a proxy costs credits + time.
-  const useBee =
-    process.env.CRAWL_VIA_SCRAPINGBEE === "true" && !!process.env.SCRAPINGBEE_API_KEY;
-  const blocked = out.status === 403 || out.status === 429 || out.status === 503;
-  if (useBee && blocked) {
-    try {
-      const params = new URLSearchParams({
-        api_key: process.env.SCRAPINGBEE_API_KEY!,
-        url,
-        render_js: "true",
-        premium_proxy: "true",
-      });
-      const r = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
-        signal: AbortSignal.timeout(Math.max(8000, Math.min(timeoutMs, 20000))),
-      });
-      if (r.ok) {
-        const beeBody = await r.text();
-        return { status: 200, body: beeBody, finalUrl: url };
-      }
-    } catch {
-      /* fall through to the original (blocked) result */
-    }
-  }
-  return out;
+  return { status: res.status, body, finalUrl: (res as any).url || url };
 }
 
 // Parse <loc> entries from a sitemap or sitemap index (recurses one level).
@@ -164,11 +169,12 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
 
 export async function crawlSite(
   startUrl: string,
-  opts: { maxPages?: number; deadlineMs?: number; concurrency?: number } = {}
+  opts: { maxPages?: number; deadlineMs?: number; concurrency?: number; proxy?: ProxyMode } = {}
 ): Promise<CrawlResult> {
   const maxPages = opts.maxPages ?? (Number(process.env.CRAWL_MAX_PAGES) || 50);
   const deadline = Date.now() + (opts.deadlineMs ?? 180_000);
   const concurrency = opts.concurrency ?? 5;
+  const proxy: ProxyMode = opts.proxy ?? "none";
   const remaining = () => Math.max(0, deadline - Date.now());
 
   const start = normalizeUrl(startUrl.startsWith("http") ? startUrl : `https://${startUrl}`) ?? `https://${startUrl}`;
@@ -177,7 +183,7 @@ export async function crawlSite(
   // 1. Fetch homepage first (also gives us the real final URL + its links)
   let home: { status: number; body: string; finalUrl: string };
   try {
-    home = await fetchText(start, 15_000);
+    home = await fetchText(start, 15_000, proxy);
   } catch {
     return { startUrl: start, finalUrl: start, pages: [], discovered: 0, crawled: 0, source: "crawl", truncated: false };
   }
@@ -213,9 +219,11 @@ export async function crawlSite(
 
   const batchable = toFetch.filter(() => true);
   await pool(batchable, concurrency, async (u) => {
-    if (remaining() < batchTimeout + 3_000) { truncated = true; return; }
+    // Proxied fetches are slower, so allow more time per page when proxying.
+    const perPage = proxy === "none" ? batchTimeout : 30_000;
+    if (remaining() < 4_000) { truncated = true; return; }
     try {
-      const r = await fetchText(u, Math.min(batchTimeout, remaining() - 2000));
+      const r = await fetchText(u, Math.min(perPage, remaining() - 2000), proxy);
       pages.push(analyzePage(r.finalUrl || u, r.status, r.body));
       // Enrich BFS: if we started from homepage links and still have room, add new internal links.
       if (source === "crawl" && pages.length < maxPages) {

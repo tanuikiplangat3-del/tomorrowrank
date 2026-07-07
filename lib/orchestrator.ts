@@ -9,7 +9,7 @@ import type {
   BacklinkSummary,
 } from "@/types/audit";
 import { updateJob } from "@/lib/store/jobs";
-import { fetchPageSignals } from "@/lib/seo/fetcher";
+import { fetchPageSignals, scrapingBeeConfigured } from "@/lib/seo/fetcher";
 import { pageSpeed } from "@/lib/providers/pagespeed";
 import {
   domainRating,
@@ -54,7 +54,11 @@ export async function runAudit(job: AuditJob): Promise<void> {
   // Wall-clock budget so the job ALWAYS reaches a terminal state before Vercel
   // kills the function. Hobby = 60s (default 50s budget); on Pro set
   // AUDIT_BUDGET_MS=240000 and maxDuration=300 in the run route.
-  const BUDGET_MS = Number(process.env.AUDIT_BUDGET_MS) || 50_000;
+  // Internal team audits get the full (large) budget for deep, thorough crawls.
+  // The public tool stays fast so it never feels stuck — capped regardless of env.
+  const BUDGET_MS = job.input.internal
+    ? (Number(process.env.AUDIT_BUDGET_MS) || 240_000)
+    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 120_000, 120_000);
   const startedAt = Date.now();
   const remaining = () => Math.max(0, BUDGET_MS - (Date.now() - startedAt));
 
@@ -165,13 +169,30 @@ export async function runAudit(job: AuditJob): Promise<void> {
           }
         }
         if (!siteIssues) {
-          // Internal team audits crawl deeper (up to 500 pages); the public tool
-          // stays lean (50) for speed. Still time-boxed by crawlBudget either way.
-          const maxPages = job.input.internal
+          // Decide how to crawl. If the main page was bot-protected (Cloudflare/
+          // WAF) and proxy crawling is enabled, route the WHOLE crawl through
+          // ScrapingBee's stealth proxy so protected pages are read like a normal
+          // site. Proxying costs credits, so cap the page count when proxying.
+          const proxyEnabled = process.env.CRAWL_VIA_SCRAPINGBEE === "true" && scrapingBeeConfigured();
+          const useProxy = proxyEnabled && !!signals.protected;
+          const proxyMode = (process.env.SCRAPINGBEE_PROXY_MODE as "premium" | "stealth") || "stealth";
+
+          const baseMax = job.input.internal
             ? (Number(process.env.CRAWL_MAX_PAGES_INTERNAL) || 500)
             : (Number(process.env.CRAWL_MAX_PAGES) || 50);
+          // Credit guard: when proxying, cap pages (internal deeper than external).
+          const proxyCap = job.input.internal
+            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 150)
+            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 25);
+          const maxPages = useProxy ? Math.min(baseMax, proxyCap) : baseMax;
+
           const crawl = await withTimeout(
-            crawlSite(signals.finalUrl, { deadlineMs: crawlBudget, maxPages }),
+            crawlSite(signals.finalUrl, {
+              deadlineMs: crawlBudget,
+              maxPages,
+              proxy: useProxy ? proxyMode : "none",
+              concurrency: useProxy ? 4 : 5,
+            }),
             crawlBudget
           );
           siteIssues = buildSiteIssues(crawl.pages);

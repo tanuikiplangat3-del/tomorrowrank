@@ -5,6 +5,7 @@
 export interface PageSignals {
   finalUrl: string;
   status: number;
+  protected?: boolean; // true if the site blocked the bot and we needed a proxy
   html: string;
   title: string | null;
   metaDescription: string | null;
@@ -75,7 +76,7 @@ export function scrapingBeeConfigured(): boolean {
   return !!process.env.SCRAPINGBEE_API_KEY;
 }
 
-async function scrapingBeeFetch(url: string, premium = false, timeoutMs = 15_000): Promise<{ status: number; html: string; finalUrl: string } | null> {
+async function scrapingBeeFetch(url: string, mode: "basic" | "premium" | "stealth" = "basic", timeoutMs = 15_000): Promise<{ status: number; html: string; finalUrl: string } | null> {
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
   const params = new URLSearchParams({
@@ -83,11 +84,8 @@ async function scrapingBeeFetch(url: string, premium = false, timeoutMs = 15_000
     url,
     render_js: "true",
   });
-  if (premium) {
-    // Escalation for tough anti-bot sites (Cloudflare, etc.) — costs more credits.
-    params.set("premium_proxy", "true");
-    params.set("country_code", "us");
-  }
+  if (mode === "premium") params.set("premium_proxy", "true");
+  if (mode === "stealth") params.set("stealth_proxy", "true"); // strongest: defeats Cloudflare/WAF
   try {
     const res = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
       signal: AbortSignal.timeout(timeoutMs),
@@ -202,24 +200,27 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   }
 
   // 2. If the site genuinely BLOCKED the bot (403/429/503 or a Cloudflare
-  //    challenge), retry via ScrapingBee. For the MAIN page it's worth escalating
-  //    to the premium proxy to get through Cloudflare (so we read real content +
-  //    internal links). This runs only for the primary audited page — the crawl
-  //    uses cheap direct fetches — so cost/time stays controlled.
+  //    challenge), retry via ScrapingBee, escalating basic → premium → stealth.
+  //    Stealth defeats Cloudflare/WAF. This is only the MAIN page, so cost/time
+  //    stays controlled; the crawl decides separately whether to proxy.
+  let wasProtected = false;
   if (scrapingBeeConfigured() && looksBlocked(status, html)) {
-    const basic = await scrapingBeeFetch(url, false, 15_000);
+    wasProtected = true;
+    const basic = await scrapingBeeFetch(url, "basic", 15_000);
     if (basic && !looksBlocked(basic.status, basic.html)) {
       ({ status, html, finalUrl } = basic);
       renderedVia = "scrapingbee";
     } else {
-      // Still blocked (e.g. Cloudflare challenge) — escalate to premium proxy.
-      const premium = await scrapingBeeFetch(url, true, 25_000);
+      const premium = await scrapingBeeFetch(url, "premium", 25_000);
       if (premium && !looksBlocked(premium.status, premium.html)) {
         ({ status, html, finalUrl } = premium);
         renderedVia = "scrapingbee-premium";
-      } else if (basic) {
-        ({ status, html, finalUrl } = basic); // use whatever we got
-        renderedVia = "scrapingbee";
+      } else {
+        const stealth = await scrapingBeeFetch(url, "stealth", 30_000);
+        if (stealth && !looksBlocked(stealth.status, stealth.html)) {
+          ({ status, html, finalUrl } = stealth);
+          renderedVia = "scrapingbee-stealth";
+        }
       }
     }
   }
@@ -307,6 +308,7 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   return {
     finalUrl,
     status: res.status,
+    protected: wasProtected,
     html,
     title,
     metaDescription: metaContent(metas, (k) => k === "description"),

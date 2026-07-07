@@ -390,3 +390,19 @@ All compile + typecheck clean. Requires rebuild + redeploy.
 Note: for deep internal crawls of protected sites, combine CRAWL_VIA_SCRAPINGBEE=true with a larger AUDIT_BUDGET_MS.
 
 ## STILL TO DO — Resend + Claude PDF report email (its own build).
+
+---
+
+## Update 21 — Real Cloudflare bypass (stealth proxy) + external stays fast
+
+Problem: with CRAWL_VIA_SCRAPINGBEE on, protected pages still returned 403 (premium proxy didn't defeat Cloudflare) and the external tool felt stuck (480s budget + proxy applied to public audits).
+
+Fixes:
+1. **Stealth proxy bypass.** ScrapingBee calls now support stealth_proxy (the mode built to defeat Cloudflare/WAF). Main page escalates basic → premium → stealth. The crawl, when a site is detected as protected, fetches EVERY page straight through the proxy (no doomed direct hit first) so a Cloudflare site is crawled like a normal site. Mode configurable via SCRAPINGBEE_PROXY_MODE (default "stealth").
+2. **Protection detection.** fetchPageSignals now returns `protected: true` when the main page had to be fetched via proxy. The orchestrator uses that to decide whether to proxy-crawl (only proxy when actually needed).
+3. **External stays fast.** Budget is now per-mode: internal = AUDIT_BUDGET_MS (deep, e.g. 480000), external = capped at 120s regardless of env, so public audits never feel stuck.
+4. **Credit guards.** When proxying, page count is capped: PROXY_CRAWL_MAX_PAGES_INTERNAL (default 150), PROXY_CRAWL_MAX_PAGES (default 25 for public). Stealth ≈ 75 ScrapingBee credits/page, so these caps bound cost per audit.
+
+Env knobs: CRAWL_VIA_SCRAPINGBEE=true (on), SCRAPINGBEE_PROXY_MODE=stealth|premium, PROXY_CRAWL_MAX_PAGES_INTERNAL, PROXY_CRAWL_MAX_PAGES.
+
+HONEST: stealth bypass + costs are UNTESTED from sandbox — first real audit after deploy confirms whether stealth defeats this Cloudflare and what it costs. Cheapest fix for THEIR OWN site (welcometomorrow.io) is to allowlist the crawler in their Cloudflare WAF (no credits at all).
