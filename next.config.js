@@ -6,6 +6,7 @@ const nextConfig = {
   // Produce a self-contained server build for a small Docker image
   output: "standalone",
   images: {
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: '**' },
     ],

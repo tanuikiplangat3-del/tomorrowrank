@@ -278,3 +278,12 @@ by hiding the popup — the /api/audit/start call happens only after /api/lead s
 ### Routing target (for ECS/ALB step)
 - ALB path rule: /ranktomorrow* → this service (container port 3000). Later /tool2* → another service.
 - Cloudflare: tools.welcometomorrow.io → ALB (DNS only / grey cloud).
+
+---
+
+## Update 14 — Fix missing logo on AWS (image optimizer under basePath/standalone)
+
+- next.config.js: added `images.unoptimized: true`. Next.js image optimizer endpoint
+  (/ranktomorrow/_next/image) fails silently in the standalone container (no sharp),
+  so the logo 404'd. Serving images unoptimized (direct from /public) fixes it.
+- No other changes. Rebuild image → push to ECR → new task-def revision → update service.
