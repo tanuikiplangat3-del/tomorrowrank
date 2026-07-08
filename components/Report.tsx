@@ -11,8 +11,8 @@ const HEADLINE_CATS = ["On-Page SEO", "GEO", "Links", "Usability", "Performance"
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
 
 export function Report({
-  report, ai, gated = true,
-}: { report: AuditReport; ai?: AiVisibilityReport; gated?: boolean }) {
+  report, ai, gated = true, jobId, leadId, email,
+}: { report: AuditReport; ai?: AiVisibilityReport; gated?: boolean; jobId?: string; leadId?: string; email?: string }) {
   const headlineScores = HEADLINE_CATS.map(
     (c) => report.categories.find((x) => x.category === c)
   ).filter(Boolean) as AuditReport["categories"];
@@ -21,7 +21,7 @@ export function Report({
   const warning = report.checks.filter((c) => c.status === "warn");
 
   return (
-    <GateContext.Provider value={{ gated }}>
+    <GateContext.Provider value={{ gated, jobId, leadId, email }}>
     <div className="mx-auto max-w-6xl px-4 py-10">
       {/* Intro card */}
       <header className={CARD}>

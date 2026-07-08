@@ -419,3 +419,31 @@ Logs showed NO audit error — the audit was just too slow (felt stuck). Causes 
 Also seen in logs: Attio Deal has a REQUIRED attribute (id 274b602a-9abe-4d82-bdbd-c9d7ba9f255b) we don't provide, so even the minimal Deal create fails. Person still upserts. To create Deals, make that Deal attribute optional in Attio, or tell me its slug + a value to send.
 
 HONEST: for welcometomorrow.io (their OWN site), the best "full crawl like any SEO tool" path is to allowlist the crawler in their Cloudflare WAF — then it's not protected, and the direct 500-page crawl works fast + free. Inline stealth crawling can only sample (speed/credit limits).
+
+---
+
+## Update 23 — ACCURACY CORE (part A)
+
+Fixes the root causes of inaccurate results found by reading the code:
+
+1. **False "missing meta/H1" on JS-rendered sites.** fetchPageSignals now detects a client-rendered SHELL (very little text + framework markers / no H1 on a 200 page) and re-fetches it via ScrapingBee render_js, so meta/title/H1/content reflect the REAL rendered page. (Main page; crawl-page rendering handled in part B.)
+2. **DataForSEO no longer starved / internal no longer spins.** AI Visibility (DataForSEO: AI Overview + ChatGPT answers) now runs IN PARALLEL with the crawl, each with its own budget — instead of last-and-only-if-time-left. So DataForSEO always runs and the audit finishes in max(crawl, ai) time.
+3. **Killed the misleading placeholder.** Removed the hardcoded "Presence in ChatGPT/Gemini/Perplexity — needs DataForSEO" line in issues.ts. The real DataForSEO AI-visibility section now stands on its own.
+4. **Attio Deals now create.** The required marketing PIPELINE stage is now ALWAYS set (never dropped) to "Captured"; only lead_source is dropped if its "SEO" option is missing. (Pipeline attr/value overridable via ATTIO_STAGE_ATTR / ATTIO_STAGE_CAPTURED.)
+5. **Edit email** keeps the typed value and returns to the form so users can correct a typo and run the audit.
+
+Part B (next): Ahrefs top-50-pages endpoint instead of crawling; replace the sentiment dashboard with an AI-Overview + citations visual; tune Claude's prompts to structure real API data + write precise recommendations; crawl-page JS rendering.
+
+---
+
+## Update 24 — Resend + Claude-generated PDF report email (part of B)
+
+The "Click to receive report" CTA now really emails a branded PDF:
+- ReportButton sends { jobId, leadId, email } (threaded via GateContext from AuditApp -> Report). Shows Sending… -> ✓ Sent / Try again states (no more fake alert).
+- /api/report/request: loads the finished audit (report + aiVisibility) by jobId, resolves the recipient (leadId -> lead.email), calls Claude to write a PRECISE narrative from the REAL data (lib/report/narrative.ts — instructed not to invent anything), renders a branded A4 PDF (lib/report/pdf.ts, pdf-lib — pure JS, container-safe, no Chromium), and emails it via Resend (lib/email/resend.ts) from seo@welcometomorrow.io with the PDF attached.
+- New deps: pdf-lib, resend. New env: RESEND_API_KEY (required to send), REPORT_FROM_EMAIL (optional, default "Welcome Tomorrow <seo@welcometomorrow.io>").
+- Attio lead creation already happens at capture; the report email is independent.
+
+HONEST: could not test live from sandbox (no Resend/DataForSEO reachable here). First real "receive report" click after deploy is the true test. Needs RESEND_API_KEY in the task def.
+
+Still remaining in B: Ahrefs top-50-pages endpoint instead of crawl; replace sentiment dashboard with AI-Overview + citations visual; crawl-page JS rendering.

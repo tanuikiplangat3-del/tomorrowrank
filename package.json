@@ -2,7 +2,7 @@
   "name": "tomorrowrank",
   "version": "1.0.0",
   "private": true,
-  "description": "TomorrowRank \u2014 SEO & AI Visibility Audit Tool by Welcome Tomorrow",
+  "description": "TomorrowRank — SEO & AI Visibility Audit Tool by Welcome Tomorrow",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -14,9 +14,11 @@
     "@upstash/redis": "^1.34.3",
     "@vercel/functions": "^2.0.0",
     "next": "^14.2.33",
+    "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.13.3"
+    "recharts": "^2.13.3",
+    "resend": "^6.17.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

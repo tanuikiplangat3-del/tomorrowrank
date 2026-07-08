@@ -41,6 +41,8 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
   const [verified, setVerified] = useState(internal); // internal team is pre-verified
+  const [leadId, setLeadId] = useState<string | undefined>(undefined);
+  const [leadEmail, setLeadEmail] = useState<string | undefined>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPoll = () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
@@ -127,7 +129,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   if (phase === "done" && job?.report) {
     return (
       <div className="relative z-10">
-        <Report report={job.report} ai={job.aiVisibility} gated={!internal} />
+        <Report report={job.report} ai={job.aiVisibility} gated={!internal} jobId={job.id} leadId={leadId} email={leadEmail} />
       </div>
     );
   }
@@ -137,7 +139,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       {gateOpen && (
         <LeadGate
           url={url}
-          onVerified={() => { setVerified(true); setGateOpen(false); void runAudit(); }}
+          onVerified={(id, mail) => { setLeadId(id); setLeadEmail(mail); setVerified(true); setGateOpen(false); void runAudit(); }}
         />
       )}
       {/* Heading — white, no underline (dark canvas) */}

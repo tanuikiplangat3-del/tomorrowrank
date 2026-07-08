@@ -240,8 +240,6 @@ export function buildSiteIssues(pages: PageFacts[]): SiteIssue[] {
     "Requires GSC / CrUX field data; only available for pages with enough real-user traffic."));
   issues.push(notChecked("gsc-security", "Technical", "Security", "Security issues & manual actions",
     "Requires Google Search Console access."));
-  issues.push(notChecked("ai-overview-presence", "AI", "AI-Overview", "Presence in ChatGPT / Gemini / Perplexity answers",
-    "Requires a SERP/LLM-answer data source (e.g. DataForSEO) for verified data."));
 
   return issues;
 }

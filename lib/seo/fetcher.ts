@@ -108,6 +108,18 @@ function looksBlocked(status: number, html: string): boolean {
   return false;
 }
 
+// A 200 page that is really a client-rendered SHELL: almost no visible text, no
+// real H1, but clear signs of a JS framework that injects content at runtime.
+// We render these so meta/H1/content checks reflect the real page, not the shell.
+function looksLikeJsShell(status: number, html: string): boolean {
+  if (status !== 200 || !html) return false;
+  const text = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const hasH1 = /<h1\b/i.test(html);
+  const frameworkMarkers = /__NEXT_DATA__|id=["']root["']|id=["']__next["']|data-reactroot|ng-version|__NUXT__|window\.__/i.test(html);
+  // Very little rendered text AND (no H1 or framework shell markers present).
+  return text.length < 400 && (!hasH1 || frameworkMarkers);
+}
+
 function textBetween(html: string, re: RegExp): string | null {
   const m = html.match(re);
   return m ? m[1].trim() : null;
@@ -217,6 +229,19 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
         ({ status, html, finalUrl } = strong);
         renderedVia = `scrapingbee-${mode}`;
       }
+    }
+  }
+
+  // 3. If the page loaded (200) but looks like a JavaScript SHELL — content is
+  //    injected client-side, so the raw HTML has almost no text and no real H1/
+  //    meta — render it with ScrapingBee (basic render_js, ~cheap) so we analyse
+  //    the ACTUAL rendered page. Without this, JS-rendered sites falsely report
+  //    "missing title/meta/H1".
+  if (scrapingBeeConfigured() && !wasProtected && looksLikeJsShell(status, html)) {
+    const rendered = await scrapingBeeFetch(url, "basic", 15_000);
+    if (rendered && !looksLikeJsShell(rendered.status, rendered.html)) {
+      ({ status, html, finalUrl } = rendered);
+      renderedVia = "scrapingbee-render";
     }
   }
 

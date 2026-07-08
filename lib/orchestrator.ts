@@ -145,11 +145,26 @@ export async function runAudit(job: AuditJob): Promise<void> {
     const overall = overallScore(categories);
     const recommendations = buildRecommendations(checks);
 
-    // 5b. Multi-page crawl → clickable site issues (time-boxed).
-    // On Vercel Pro set AUDIT_BUDGET_MS=240000, maxDuration=300, CRAWL_MAX_PAGES=50.
+    // 5b. Kick off AI Visibility (DataForSEO) IN PARALLEL with the crawl. They are
+    // independent, so running them together means AI visibility is never starved
+    // by a slow crawl (the old bug where DataForSEO got skipped), and the audit
+    // finishes in max(crawl, ai) time instead of the sum.
+    const pageText = stripTags(signals.html).slice(0, 8000);
+    const aiVisBudget = remaining() - 5_000;
+    const aiPromise: Promise<any> =
+      aiVisBudget > 8_000
+        ? withTimeout(
+            runAiVisibility(domain, country, pageText, (stage, p) =>
+              updateJob(job.id, { stage, progress: 80 + Math.round(p * 0.2) })
+            ),
+            aiVisBudget
+          ).catch(() => undefined)
+        : Promise.resolve(undefined);
+
+    // Multi-page crawl → clickable site issues (runs alongside AI visibility).
     let siteIssues: ReturnType<typeof buildSiteIssues> | undefined;
     let crawlMeta: any | undefined;
-    const crawlBudget = remaining() - 20_000; // reserve time for AI visibility + save
+    const crawlBudget = remaining() - 5_000; // AI runs in parallel; no reserve needed
     if (crawlBudget > 12_000) {
       await set("Crawling site & analysing pages", 66);
       try {
@@ -250,20 +265,8 @@ export async function runAudit(job: AuditJob): Promise<void> {
 
     await updateJob(job.id, { status: "running", stage: "Building AI Visibility report", progress: 80, report });
 
-    // 6. AI Visibility (multi-LLM share of voice) — heaviest step, runs last.
-    // Time-boxed against the remaining budget. If it can't finish in time, we
-    // still complete the audit with the core report rather than hang forever.
-    const pageText = stripTags(signals.html).slice(0, 8000);
-    const aiBudget = remaining() - 4_000; // leave headroom to write the result
-    let aiVisibility: any = undefined;
-    if (aiBudget > 8_000) {
-      aiVisibility = await withTimeout(
-        runAiVisibility(domain, country, pageText, (stage, p) =>
-          updateJob(job.id, { stage, progress: 80 + Math.round(p * 0.2) })
-        ),
-        aiBudget
-      ).catch(() => undefined);
-    }
+    // 6. Await the AI Visibility result that has been running in parallel with the crawl.
+    const aiVisibility: any = await aiPromise;
 
     await updateJob(job.id, {
       status: "done",

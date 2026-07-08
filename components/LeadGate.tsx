@@ -13,7 +13,7 @@ export function LeadGate({
   onVerified,
 }: {
   url: string;
-  onVerified: (leadId: string) => void;
+  onVerified: (leadId: string, email: string) => void;
 }) {
   const [firstName, setFirst] = useState("");
   const [lastName, setLast] = useState("");
@@ -44,7 +44,7 @@ export function LeadGate({
       const data = await res.json().catch(() => ({}));
       if (res.status === 422 || data.error === "MISMATCH") { setMismatch(true); setSubmitting(false); return; }
       if (!res.ok) { setError(data.error || "Could not verify your details."); setSubmitting(false); return; }
-      onVerified(data.leadId);
+      onVerified(data.leadId, email);
     } catch {
       setError("Network error — please try again.");
       setSubmitting(false);
@@ -112,7 +112,8 @@ export function LeadGate({
                   Contact to verify →
                 </a>
                 <button
-                  onClick={() => { setMismatch(false); setEmail(""); }}
+                  type="button"
+                  onClick={() => { setMismatch(false); setError(null); }}
                   className="flex-1 rounded-md border border-glassBorder px-4 py-2 text-center text-sm font-semibold text-paper transition hover:border-wtgreen"
                 >
                   Edit email

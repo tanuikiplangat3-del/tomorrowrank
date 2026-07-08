@@ -120,26 +120,26 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
   const source = leadSourceAttr && leadSourceValue ? { [leadSourceAttr]: leadSourceValue } : {};
   const stage = stageAttr && stageCaptured ? { [stageAttr]: [{ status: stageCaptured }] } : {};
 
-  // Ordered from most-complete to most-minimal. Each drops one thing likely to
-  // be rejected (stage first, then lead_source), always keeping name/link/website.
+  // The Deal's marketing PIPELINE (stage) is REQUIRED in this workspace — a Deal
+  // cannot be created without it — so we ALWAYS include it and never drop it.
+  // Only lead_source is optional (it may lack an "SEO" option), so that's the
+  // one thing dropped if Attio rejects it.
   const attempts: { label: string; values: Record<string, unknown> }[] = [
     { label: "full", values: { name, ...website, ...source, ...stage, ...link } },
-    { label: "no-stage", values: { name, ...website, ...source, ...link } },
-    { label: "no-stage-no-source", values: { name, ...website, ...link } },
-    { label: "minimal", values: { name, ...link } },
+    { label: "no-source", values: { name, ...website, ...stage, ...link } },
+    { label: "stage-only", values: { name, ...stage, ...link } },
   ];
 
   for (const attempt of attempts) {
     try {
       const data = await post(attempt.values);
       if (attempt.label !== "full") {
-        console.warn(`[attio] Deal created with reduced fields (${attempt.label}) — check that lead_source has an "${leadSourceValue}" option and the stage "${stageCaptured}" is writable.`);
+        console.warn(`[attio] Deal created without lead_source — add an "${leadSourceValue}" option to the lead_source select to populate it.`);
       }
       return data?.data?.id?.record_id ?? null;
     } catch (err) {
-      // Try the next, simpler payload.
-      if (attempt.label === "minimal") {
-        console.error("[attio] Deal creation failed even minimally:", err);
+      if (attempt.label === "stage-only") {
+        console.error(`[attio] Deal creation failed. Verify pipeline stage "${stageCaptured}" exists on attribute "${stageAttr}" and is writable:`, err);
       }
     }
   }

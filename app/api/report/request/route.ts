@@ -1,41 +1,75 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getJob } from "@/lib/store/jobs";
+import { getLead } from "@/lib/store/leads";
+import { buildReportNarrative } from "@/lib/report/narrative";
+import { buildReportPdf } from "@/lib/report/pdf";
+import { sendReportEmail, resendConfigured } from "@/lib/email/resend";
+
+export const maxDuration = 60;
 
 /**
- * POST /api/report/request
+ * POST /api/report/request  — "Click to receive report"
+ * Body: { jobId, leadId?, email?, source? }
  *
- * Triggered by the "Click to receive report" CTA.
- *
- * FINAL INTENDED BEHAVIOUR (two pieces still to build):
- *   1. Email the full report to the lead's captured email.
- *      -> Implement with Resend once the account + from-address exist.
- *   2. Move the lead Captured -> Nurturing in Attio.
- *      -> Look up the Person by email, find their SEO-sourced Deal, and advance
- *         the stage ONLY if it is still "Captured" (never move backwards).
- *      -> Blocked on Attio API key + object/field IDs from Victor.
- *
- * For now this is a safe stub: it acknowledges the request so the UI works,
- * without pretending to send an email or update the CRM. Wire the two steps
- * below when their dependencies are ready — the frontend button won't change.
+ * 1. Load the finished audit (report + aiVisibility) by jobId.
+ * 2. Resolve the recipient email (leadId -> lead.email, or body.email).
+ * 3. Claude writes a precise narrative from the REAL data.
+ * 4. Render a branded PDF (pdf-lib) and email it via Resend from seo@welcometomorrow.io.
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const source = typeof body?.source === "string" ? body.source : "unknown";
+    const jobId = typeof body?.jobId === "string" ? body.jobId : "";
+    const leadId = typeof body?.leadId === "string" ? body.leadId : "";
+    let email = typeof body?.email === "string" ? body.email : "";
 
-    // TODO(Resend): send the report email to the lead's captured address.
-    // TODO(Attio): upsert Person by email, then move their SEO Deal
-    //   Captured -> Nurturing (only if currently Captured).
+    if (!jobId) {
+      return NextResponse.json({ ok: false, error: "Missing audit reference." }, { status: 400 });
+    }
 
-    // Minimal trace so we can see the CTA is being used before the flow is live.
-    console.log(`[report/request] received (source=${source})`);
+    const job = await getJob(jobId);
+    if (!job?.report) {
+      return NextResponse.json({ ok: false, error: "Report not found or not ready yet." }, { status: 404 });
+    }
 
-    return NextResponse.json({
-      ok: true,
-      pending: true,
-      message:
-        "Report request received. Email + CRM update are not yet wired (awaiting Resend + Attio).",
+    // Resolve recipient
+    let firstName = "there";
+    if (leadId) {
+      const lead = await getLead(leadId);
+      if (lead) { email = email || lead.email; firstName = lead.firstName || firstName; }
+    }
+    if (!email) {
+      return NextResponse.json({ ok: false, error: "No email on file for this report." }, { status: 400 });
+    }
+
+    if (!resendConfigured()) {
+      return NextResponse.json({ ok: false, error: "Email sending is not configured yet." }, { status: 503 });
+    }
+
+    const siteLabel = job.report?.meta?.finalUrl
+      ? new URL(job.report.meta.finalUrl).hostname.replace(/^www\./, "")
+      : (job.input?.url || "your site");
+
+    // Claude narrative from real data -> PDF
+    const content = await buildReportNarrative({ siteLabel, report: job.report, ai: job.aiVisibility });
+    const pdf = await buildReportPdf(content);
+
+    const result = await sendReportEmail({
+      to: email,
+      firstName,
+      siteLabel,
+      pdf,
+      filename: `SEO-AI-Report-${siteLabel}.pdf`,
     });
-  } catch {
-    return NextResponse.json({ ok: false }, { status: 400 });
+
+    if (!result.ok) {
+      console.error("[report/request] email failed:", result.error);
+      return NextResponse.json({ ok: false, error: "Could not send the email. Please try again." }, { status: 502 });
+    }
+
+    return NextResponse.json({ ok: true, sentTo: email });
+  } catch (err: any) {
+    console.error("[report/request] error:", err?.message ?? err);
+    return NextResponse.json({ ok: false, error: "Something went wrong generating the report." }, { status: 500 });
   }
 }

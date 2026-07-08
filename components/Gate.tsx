@@ -10,7 +10,7 @@
 // technical user could remove the blur in dev tools. That is an accepted
 // trade-off for a marketing tease; true server-side gating is a later option.
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useState } from "react";
 
 // Discovery-call booking goes to Ochuko's Cal page. The booking -> Attio stage
 // move is handled by the existing n8n backend (matched on email), NOT by this app.
@@ -30,10 +30,14 @@ export function ctaHref(source: string): string {
   return `${BOOKING_URL}${sep}utm_source=ranktomorrow&utm_medium=audit&utm_content=${encodeURIComponent(source)}`;
 }
 
-// Whether the current viewer is internal (unblurred) or external (gated).
-export const GateContext = createContext<{ gated: boolean }>({ gated: true });
+// Whether the current viewer is internal (unblurred) or external (gated), plus
+// the ids needed to email the report (jobId = which audit, leadId = who).
+export const GateContext = createContext<{ gated: boolean; jobId?: string; leadId?: string; email?: string }>({ gated: true });
 export function useGated(): boolean {
   return useContext(GateContext).gated;
+}
+export function useGateInfo() {
+  return useContext(GateContext);
 }
 
 /** Primary CTA button — always routes to the single booking URL with a source tag. */
@@ -73,29 +77,43 @@ export function ReportButton({
   className = "",
   label = "Click to receive report",
 }: { source: string; className?: string; label?: string }) {
+  const { jobId, leadId, email } = useGateInfo();
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
   async function requestReport() {
+    setState("sending");
     try {
-      await fetch(apiPath("/api/report/request"), {
+      const res = await fetch(apiPath("/api/report/request"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source }),
+        body: JSON.stringify({ source, jobId, leadId, email }),
       });
-      // Placeholder UX until the real email+Attio flow lands.
-      alert("Thanks! Your report is on its way to your email.");
+      const data = await res.json().catch(() => ({}));
+      setState(res.ok && data.ok ? "sent" : "error");
     } catch {
-      alert("Something went wrong — please try again shortly.");
+      setState("error");
     }
   }
+
+  if (state === "sent") {
+    return (
+      <p className={"text-sm font-semibold text-wtgreen " + className}>
+        ✓ Sent! Check your inbox for the full report.
+      </p>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={requestReport}
+      disabled={state === "sending"}
       className={
-        "inline-block rounded-lg bg-wtgreen px-6 py-3 text-sm font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep " +
+        "inline-block rounded-lg bg-wtgreen px-6 py-3 text-sm font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep disabled:opacity-60 " +
         className
       }
     >
-      {label}
+      {state === "sending" ? "Sending…" : state === "error" ? "Try again" : label}
     </button>
   );
 }

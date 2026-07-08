@@ -34,6 +34,14 @@ export async function saveLead(lead: Lead): Promise<void> {
   await r.lpush("leads:index", lead.id);
 }
 
+export async function getLead(id: string): Promise<Lead | null> {
+  const r = getRedis();
+  if (!r) return null;
+  const raw = await r.get(`lead:${id}`);
+  if (!raw) return null;
+  return typeof raw === "string" ? JSON.parse(raw) : (raw as Lead);
+}
+
 export async function listLeads(limit = 500): Promise<Lead[]> {
   const r = getRedis();
   if (!r) return [];
