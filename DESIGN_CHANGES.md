@@ -447,3 +447,15 @@ The "Click to receive report" CTA now really emails a branded PDF:
 HONEST: could not test live from sandbox (no Resend/DataForSEO reachable here). First real "receive report" click after deploy is the true test. Needs RESEND_API_KEY in the task def.
 
 Still remaining in B: Ahrefs top-50-pages endpoint instead of crawl; replace sentiment dashboard with AI-Overview + citations visual; crawl-page JS rendering.
+
+---
+
+## Update 25 — Spin cap, keyword casing, Attio pipeline resolver, score reconcile, report-after-refresh
+
+1. **Spinning fixed.** Effective time budget is now HARD-CAPPED regardless of AUDIT_BUDGET_MS: internal 3 min, external 90s (env can only lower). Watchdog fires 15s after. Your AUDIT_BUDGET_MS=480000 was making internal run up to 8 min = looked like spinning.
+2. **Ahrefs keywords bug.** country was sent lowercase ("ke"); Ahrefs requires uppercase ISO-2 ("KE"). Fixed in organicKeywords + organicCompetitors. NOTE: verified directly that welcometomorrow.io returns ZERO organic keywords in Ahrefs — that site genuinely has no keyword data, so test keyword/backlink features on a site with an established Ahrefs profile.
+3. **Attio pipeline "Captured".** Added resolveStage(): queries the Deal object's real status attribute + its statuses, matches "Captured" (case-insensitive, falls back to first stage), and sets it by the true slug — instead of guessing "stage"/"Captured". Cached. This should make Deals populate in the marketing pipeline.
+4. **Score vs issues contradiction fixed.** Headline overall now blends the crawl's site-wide score (60%) with the on-page score (40%), so it can't say "perfect" while the issues list is full. Summary wording now says "site" not "page".
+5. **Report-after-refresh.** leadId is persisted in the URL (?job=&lead=) via a ref (no stale closure), so the "receive report" button still has a recipient after a refresh. Report route now logs each step (narrative/pdf/RESEND) distinctly to pinpoint failures.
+
+Still TODO (Part B): Ahrefs top-50-pages endpoint; AI-Overview + citations dashboard replacing sentiment; crawl-page JS rendering. Also: add RESEND to health display.

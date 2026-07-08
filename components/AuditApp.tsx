@@ -43,6 +43,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   const [verified, setVerified] = useState(internal); // internal team is pre-verified
   const [leadId, setLeadId] = useState<string | undefined>(undefined);
   const [leadEmail, setLeadEmail] = useState<string | undefined>(undefined);
+  const leadIdRef = useRef<string | undefined>(undefined);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPoll = () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
@@ -51,11 +52,11 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   // Persist the current job id in the URL (?job=…) so a page refresh — e.g. after
   // a dropped connection — restores the SAME dashboard from storage instead of
   // wiping it and forcing a re-audit.
-  const setJobParam = (jobId: string | null) => {
+  const setJobParam = (jobId: string | null, lead?: string | null) => {
     if (typeof window === "undefined") return;
     const u = new URL(window.location.href);
-    if (jobId) u.searchParams.set("job", jobId);
-    else u.searchParams.delete("job");
+    if (jobId) u.searchParams.set("job", jobId); else u.searchParams.delete("job");
+    if (lead) u.searchParams.set("lead", lead); else if (lead === null) u.searchParams.delete("lead");
     window.history.replaceState(null, "", u.toString());
   };
 
@@ -81,7 +82,9 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const jobId = new URL(window.location.href).searchParams.get("job");
+    const savedLead = new URL(window.location.href).searchParams.get("lead");
     if (!jobId) return;
+    if (savedLead) { leadIdRef.current = savedLead; setLeadId(savedLead); }
     setPhase("processing");
     (async () => {
       try {
@@ -118,7 +121,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to start audit");
       const jobId = data.jobId as string;
-      setJobParam(jobId); // persist so refresh restores this audit
+      setJobParam(jobId, leadIdRef.current ?? null); // persist so refresh restores audit + lead
       pollJob(jobId);
     } catch (e: any) {
       setError(e.message);
@@ -139,7 +142,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       {gateOpen && (
         <LeadGate
           url={url}
-          onVerified={(id, mail) => { setLeadId(id); setLeadEmail(mail); setVerified(true); setGateOpen(false); void runAudit(); }}
+          onVerified={(id, mail) => { leadIdRef.current = id; setLeadId(id); setLeadEmail(mail); setVerified(true); setGateOpen(false); void runAudit(); }}
         />
       )}
       {/* Heading — white, no underline (dark canvas) */}

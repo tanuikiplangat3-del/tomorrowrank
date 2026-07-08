@@ -140,7 +140,7 @@ export async function organicKeywords(
 ) {
   const data = await get("/site-explorer/organic-keywords", {
     target,
-    country: country.toLowerCase(),
+    country: country.toUpperCase(),
     select: "keyword,best_position,volume,sum_traffic,best_position_url,keyword_difficulty,cpc",
     order_by: "sum_traffic:desc",
     limit: String(limit),
@@ -154,7 +154,7 @@ export async function organicCompetitors(target: string, country: string, limit 
   try {
     const data = await get("/site-explorer/organic-competitors", {
       target,
-      country: country.toLowerCase(),
+      country: country.toUpperCase(),
       select: "competitor_domain,common_keywords,domain_rating",
       order_by: "common_keywords:desc",
       limit: String(limit),

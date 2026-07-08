@@ -54,11 +54,13 @@ export async function runAudit(job: AuditJob): Promise<void> {
   // Wall-clock budget so the job ALWAYS reaches a terminal state before Vercel
   // kills the function. Hobby = 60s (default 50s budget); on Pro set
   // AUDIT_BUDGET_MS=240000 and maxDuration=300 in the run route.
-  // Internal team audits get the full (large) budget for deep, thorough crawls.
-  // The public tool stays fast so it never feels stuck — capped regardless of env.
+  // Effective time budget. We HARD-CAP this so an audit can never run for many
+  // minutes (which looks like "spinning"): internal audits get up to 3 min for a
+  // thorough crawl, the public tool stays snappy at 90s. AUDIT_BUDGET_MS can only
+  // lower these, not raise them past the cap.
   const BUDGET_MS = job.input.internal
-    ? (Number(process.env.AUDIT_BUDGET_MS) || 240_000)
-    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 120_000, 120_000);
+    ? Math.min(Number(process.env.AUDIT_BUDGET_MS) || 180_000, 180_000)
+    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 90_000, 90_000);
   const startedAt = Date.now();
   const remaining = () => Math.max(0, BUDGET_MS - (Date.now() - startedAt));
 
@@ -68,7 +70,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
   // Watchdog: guarantee the job ALWAYS reaches a terminal state, even if some
   // step hangs (e.g. a bot-protected site that stalls a fetch). Without this the
   // UI could spin forever. Fires HARD_CAP after start; cleared on normal finish.
-  const HARD_CAP = BUDGET_MS + 30_000;
+  const HARD_CAP = BUDGET_MS + 15_000;
   let finished = false;
   const watchdog = setTimeout(() => {
     if (!finished) {
@@ -164,6 +166,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
     // Multi-page crawl → clickable site issues (runs alongside AI visibility).
     let siteIssues: ReturnType<typeof buildSiteIssues> | undefined;
     let crawlMeta: any | undefined;
+    let siteScore: { score: number; grade: string } | undefined;
     const crawlBudget = remaining() - 5_000; // AI runs in parallel; no reserve needed
     if (crawlBudget > 12_000) {
       await set("Crawling site & analysing pages", 66);
@@ -176,6 +179,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
           if (ahrefsIssues && ahrefsIssues.length) {
             siteIssues = ahrefsIssues;
             const sc = scoreFromIssues(siteIssues);
+            siteScore = { score: sc.score, grade: sc.grade };
             crawlMeta = {
               source: "ahrefs-siteaudit", discovered: ahrefsIssues.length, crawled: 0,
               truncated: false, score: sc.score, grade: sc.grade,
@@ -213,6 +217,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
           );
           siteIssues = buildSiteIssues(crawl.pages);
           const sc = scoreFromIssues(siteIssues);
+          siteScore = { score: sc.score, grade: sc.grade };
           crawlMeta = {
             source: crawl.source, discovered: crawl.discovered, crawled: crawl.crawled,
             truncated: crawl.truncated, score: sc.score, grade: sc.grade,
@@ -221,6 +226,15 @@ export async function runAudit(job: AuditJob): Promise<void> {
         }
       } catch { /* crawl skipped; core report still completes */ }
     }
+
+    // Reconcile the headline with the crawl. The on-page `overall` reflects only
+    // the main page; if a site-wide crawl produced a score, blend it in so the
+    // headline can't say "perfect" while the site issues list is full of problems.
+    const gradeFor = (s: number) => (s >= 90 ? "A" : s >= 80 ? "B" : s >= 70 ? "C" : s >= 55 ? "D" : "F");
+    const finalScore = siteScore
+      ? Math.round(overall.score * 0.4 + siteScore.score * 0.6)
+      : overall.score;
+    const finalGrade = siteScore ? gradeFor(finalScore) : overall.grade;
 
     const report: AuditReport = {
       meta: {
@@ -234,12 +248,12 @@ export async function runAudit(job: AuditJob): Promise<void> {
         fetchedAt: new Date().toISOString(),
       },
       overall: {
-        grade: overall.grade,
-        score: overall.score,
+        grade: finalGrade,
+        score: finalScore,
         summary:
-          overall.score >= 90 ? "Your page is in great shape"
-          : overall.score >= 75 ? "Your page could be better"
-          : "Your page needs attention",
+          finalScore >= 90 ? "Your site is in great shape"
+          : finalScore >= 75 ? "Your site could be better"
+          : "Your site needs attention",
         recommendationCount: recommendations.length,
       },
       categories,

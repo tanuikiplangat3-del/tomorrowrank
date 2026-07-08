@@ -51,8 +51,19 @@ export async function POST(req: NextRequest) {
       : (job.input?.url || "your site");
 
     // Claude narrative from real data -> PDF
-    const content = await buildReportNarrative({ siteLabel, report: job.report, ai: job.aiVisibility });
-    const pdf = await buildReportPdf(content);
+    let content, pdf;
+    try {
+      content = await buildReportNarrative({ siteLabel, report: job.report, ai: job.aiVisibility });
+    } catch (e: any) {
+      console.error("[report/request] narrative failed:", e?.message ?? e);
+      return NextResponse.json({ ok: false, error: "Could not build the report content." }, { status: 500 });
+    }
+    try {
+      pdf = await buildReportPdf(content);
+    } catch (e: any) {
+      console.error("[report/request] pdf failed:", e?.message ?? e);
+      return NextResponse.json({ ok: false, error: "Could not render the PDF." }, { status: 500 });
+    }
 
     const result = await sendReportEmail({
       to: email,
@@ -63,9 +74,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.ok) {
-      console.error("[report/request] email failed:", result.error);
+      console.error("[report/request] RESEND failed:", result.error);
       return NextResponse.json({ ok: false, error: "Could not send the email. Please try again." }, { status: 502 });
     }
+    console.log(`[report/request] sent to ${email} (id=${result.id})`);
 
     return NextResponse.json({ ok: true, sentTo: email });
   } catch (err: any) {

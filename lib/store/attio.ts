@@ -85,9 +85,58 @@ async function upsertPerson(lead: Lead): Promise<string | null> {
 }
 
 /**
+ * Resolve the Deal pipeline: find the status-type attribute and the exact title
+ * of the "Captured" status, by asking Attio. Cached after first success so we
+ * don't re-query on every lead. Falls back to configured defaults if the API
+ * shape differs. This makes the stage write reliable regardless of slug/casing.
+ */
+let stageCache: { attr: string; status: string } | null = null;
+async function resolveStage(dealsObject: string, preferAttr: string, wantTitle: string): Promise<{ attr: string; status: string } | null> {
+  if (stageCache) return stageCache;
+
+  const wanted = wantTitle.trim().toLowerCase();
+  const tryAttr = async (attr: string): Promise<{ attr: string; status: string } | null> => {
+    try {
+      const res = await attio<{ data?: { title?: string; id?: { status_id?: string } }[] }>(
+        `/objects/${dealsObject}/attributes/${attr}/statuses`,
+        "GET"
+      );
+      const statuses = res?.data ?? [];
+      if (!statuses.length) return null;
+      const match =
+        statuses.find((s) => (s.title ?? "").trim().toLowerCase() === wanted) ??
+        statuses.find((s) => (s.title ?? "").trim().toLowerCase().includes(wanted)) ??
+        statuses[0]; // first stage of the pipeline as a safe default
+      if (match?.title) return { attr, status: match.title };
+    } catch {
+      /* attr not a status field / not found */
+    }
+    return null;
+  };
+
+  // 1. Try the configured/likely attribute first.
+  let resolved = await tryAttr(preferAttr);
+
+  // 2. Otherwise discover the first status-type attribute on the Deal object.
+  if (!resolved) {
+    try {
+      const attrs = await attio<{ data?: { api_slug?: string; type?: string }[] }>(
+        `/objects/${dealsObject}/attributes?limit=100`,
+        "GET"
+      );
+      const statusAttr = (attrs?.data ?? []).find((a) => a.type === "status" && a.api_slug);
+      if (statusAttr?.api_slug) resolved = await tryAttr(statusAttr.api_slug);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (resolved) stageCache = resolved;
+  return resolved;
+}
+
+/**
  * Create a Deal at the "Captured" stage, linked to the person.
- * Only sets the stage if ATTIO_STAGE_ATTR + ATTIO_STAGE_CAPTURED are configured
- * (so we never write a stage the tool isn't permitted / that doesn't exist).
  */
 async function createDeal(lead: Lead, personId: string | null): Promise<string | null> {
   const dealsObject = cfg("ATTIO_DEALS_OBJECT", "deals");
@@ -118,7 +167,12 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
     : {};
   const website = lead.url ? { [websiteAttr]: lead.url } : {};
   const source = leadSourceAttr && leadSourceValue ? { [leadSourceAttr]: leadSourceValue } : {};
-  const stage = stageAttr && stageCaptured ? { [stageAttr]: [{ status: stageCaptured }] } : {};
+
+  // Resolve the real pipeline status (attr + exact "Captured" title) from Attio.
+  const resolved = await resolveStage(dealsObject, stageAttr, stageCaptured);
+  const stage = resolved
+    ? { [resolved.attr]: [{ status: resolved.status }] }
+    : (stageAttr && stageCaptured ? { [stageAttr]: [{ status: stageCaptured }] } : {});
 
   // The Deal's marketing PIPELINE (stage) is REQUIRED in this workspace — a Deal
   // cannot be created without it — so we ALWAYS include it and never drop it.
