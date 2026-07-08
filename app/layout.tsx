@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Background } from "@/components/Background";
+import { GoogleAnalytics } from "@next/third-parties/google";
+
+// GA4 Measurement ID (public — appears in page source; safe to commit).
+const GA_ID = "G-3D0H9F3QBM";
 
 const SITE = "https://tools.welcometomorrow.io";
 const PATH = "/ranktomorrow";
@@ -52,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Background />
         {children}
       </body>
+      <GoogleAnalytics gaId={GA_ID} />
     </html>
   );
 }

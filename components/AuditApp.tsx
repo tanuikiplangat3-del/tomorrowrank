@@ -7,6 +7,7 @@ import { SearchableSelect } from "./SearchableSelect";
 import { LeadGate } from "./LeadGate";
 import { apiPath } from "./Gate";
 import { Report } from "./Report";
+import { sendGAEvent } from "@next/third-parties/google";
 
 type Phase = "input" | "processing" | "done" | "error";
 
@@ -113,6 +114,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
   const runAudit = useCallback(async () => {
     setPhase("processing");
     try {
+      sendGAEvent("event", "audit_start", { site: prettyHost(url), country, internal });
       const res = await fetch(apiPath("/api/audit/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },

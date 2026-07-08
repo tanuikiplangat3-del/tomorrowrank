@@ -578,3 +578,15 @@ Fix: resolveStage now:
 Default wanted stage reverted to "Captured".
 
 After deploy the logs will show: objects, statuses for "stage", statuses for "captured_contact", and "[attio] matched wanted stage Captured -> attr ... = ...". If Captured isn't found, we'll see every pipeline's stages and can target exactly (incl. a separate object via ATTIO_DEALS_OBJECT).
+
+---
+
+## Update 35 — GA4 analytics + conversion funnel
+
+Added Google Analytics 4 (Measurement ID G-3D0H9F3QBM) via the official @next/third-parties GoogleAnalytics helper in app/layout.tsx (auto pageviews; loads from googletagmanager.com so basePath is irrelevant; ID is public so committed as a constant — avoids the ECS runtime-vs-build-time NEXT_PUBLIC pitfall).
+Conversion funnel events (sendGAEvent):
+- audit_start — fired in AuditApp.runAudit when an audit begins ({site, country, internal}).
+- generate_lead — fired in LeadGate on successful lead capture ({site, newsletter}).
+So GA4 shows visits -> audit_start -> generate_lead. Mark generate_lead as a Key Event (conversion) in GA4 Admin to track audit->lead conversion rate.
+Dep added: @next/third-parties@^14.2.33.
+Note: build warns Next 14.2.33 has a security advisory (upgrade later, separate task).

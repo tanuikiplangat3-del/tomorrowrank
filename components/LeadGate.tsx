@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { apiPath } from "./Gate";
 import { emailMatchesSite, siteHost } from "@/lib/leadmatch";
+import { sendGAEvent } from "@next/third-parties/google";
 
 export function LeadGate({
   url,
@@ -44,6 +45,7 @@ export function LeadGate({
       const data = await res.json().catch(() => ({}));
       if (res.status === 422 || data.error === "MISMATCH") { setMismatch(true); setSubmitting(false); return; }
       if (!res.ok) { setError(data.error || "Could not verify your details."); setSubmitting(false); return; }
+      sendGAEvent("event", "generate_lead", { site: siteHost(url), newsletter });
       onVerified(data.leadId, email);
     } catch {
       setError("Network error — please try again.");
