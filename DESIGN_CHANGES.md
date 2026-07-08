@@ -590,3 +590,27 @@ Conversion funnel events (sendGAEvent):
 So GA4 shows visits -> audit_start -> generate_lead. Mark generate_lead as a Key Event (conversion) in GA4 Admin to track audit->lead conversion rate.
 Dep added: @next/third-parties@^14.2.33.
 Note: build warns Next 14.2.33 has a security advisory (upgrade later, separate task).
+
+---
+
+## Update 36 — Replace Attio with Google Sheets for lead capture
+
+Removed Attio entirely (deleted lib/store/attio.ts + all references) and replaced the CRM push with a Google Sheets webhook.
+- New lib/store/sheets.ts: pushLeadToSheet() POSTs each lead to a Google Apps Script Web App (SHEETS_WEBHOOK_URL) with an optional shared secret (SHEETS_WEBHOOK_SECRET); background/fire-and-forget, logs [sheets] append ok/failed. Redis backup (saveLead) still runs first and still powers the report email (getLead).
+- app/api/lead/route.ts: Attio push -> Sheets push.
+- Health route: dropped ATTIO_API_KEY; added SHEETS_WEBHOOK_URL + RESEND_API_KEY to the display.
+- Chose an Apps Script Web App (not Sheets API + service account): no googleapis dep, no PEM key in ECS env, matches the team's existing Apps Script usage. Setup steps + the exact doPost script are documented at the bottom of lib/store/sheets.ts.
+
+ACTION for user: create the Apps Script web app (code in sheets.ts), then set env vars SHEETS_WEBHOOK_URL (/exec URL) and SHEETS_WEBHOOK_SECRET. Can drop ATTIO_API_KEY from the task def.
+
+---
+
+## Update 37 — Replace direct GA4 with Google Tag Manager (GTM-PVGW8KF)
+
+Per GA4 expert instruction, removed the @next/third-parties GA4 tag (G-3D0H9F3QBM) and installed GTM properly:
+- Loader <script> placed as high in <head> as possible (verbatim GTM snippet via dangerouslySetInnerHTML) in app/layout.tsx.
+- <noscript> iframe placed immediately after the opening <body>.
+- Removed @next/third-parties dependency + all sendGAEvent usage.
+- Funnel events re-wired to GTM's dataLayer (lib/gtm.ts gtmEvent): audit_start (AuditApp) and generate_lead (LeadGate) now push { event, ... } to dataLayer.
+
+In GTM: create Custom Event triggers on "audit_start" and "generate_lead", attach GA4 event tags, and configure GA4 inside GTM (the G-... measurement ID now lives in a GTM tag, not in the app). Mark generate_lead as a Key Event/conversion in GA4.

@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { promises as dns } from "dns";
 import { saveLead, type Lead } from "@/lib/store/leads";
-import { attioConfigured, pushLeadToAttio } from "@/lib/store/attio";
+import { sheetsConfigured, pushLeadToSheet } from "@/lib/store/sheets";
 import { emailMatchesSite } from "@/lib/leadmatch";
 
 export const runtime = "nodejs";
@@ -83,16 +83,16 @@ export async function POST(req: NextRequest) {
       url,
       createdAt: new Date().toISOString(),
     };
-    // Safety net first: store locally so a lead is never lost even if the CRM
-    // push fails. Redis is a silent backup — Attio is the real CRM.
+    // Safety net first: store locally so a lead is never lost even if the
+    // Sheets push fails. Redis is a silent backup + powers the report email.
     await saveLead(lead);
 
-    // Push to Attio in the BACKGROUND (not awaited): the CRM push must never
-    // delay the user or the audit. The lead is already saved above, so if the
-    // push fails we still have it. (upsert Person -> create Deal at "Captured".)
-    if (attioConfigured()) {
-      void pushLeadToAttio(lead).catch((err) => {
-        console.error("[lead] Attio push failed (lead saved to backup):", err);
+    // Append to Google Sheets in the BACKGROUND (not awaited): the CRM push must
+    // never delay the user or the audit. The lead is already saved above, so if
+    // the push fails we still have it.
+    if (sheetsConfigured()) {
+      void pushLeadToSheet(lead).catch((err) => {
+        console.error("[lead] Sheets push failed (lead saved to backup):", err);
       });
     }
 

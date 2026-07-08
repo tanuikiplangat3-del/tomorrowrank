@@ -12,8 +12,8 @@
 
 import { createContext, useContext, useState } from "react";
 
-// Discovery-call booking goes to Ochuko's Cal page. The booking -> Attio stage
-// move is handled by the existing n8n backend (matched on email), NOT by this app.
+// Discovery-call booking goes to Ochuko's Cal page. Any CRM follow-up from a
+// booking is handled by the separate n8n backend (matched on email), NOT by this app.
 export const BOOKING_URL = "https://cal.wtlabs-n8n.com/ochuko-adeboye/30min";
 
 // The app runs under a basePath (e.g. /ranktomorrow). Client-side fetch() is NOT

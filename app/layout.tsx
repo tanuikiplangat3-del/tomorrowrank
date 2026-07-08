@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Background } from "@/components/Background";
-import { GoogleAnalytics } from "@next/third-parties/google";
 
-// GA4 Measurement ID (public — appears in page source; safe to commit).
-const GA_ID = "G-3D0H9F3QBM";
+// Google Tag Manager container ID.
+const GTM_ID = "GTM-PVGW8KF";
 
 const SITE = "https://tools.welcometomorrow.io";
 const PATH = "/ranktomorrow";
@@ -44,6 +43,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        {/* Google Tag Manager — as high in <head> as possible */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${GTM_ID}');`,
+          }}
+        />
+        {/* End Google Tag Manager */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
@@ -52,11 +58,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-body antialiased text-paper">
+        {/* Google Tag Manager (noscript) — immediately after opening <body> */}
+        <noscript>
+          <iframe
+            src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
+            height="0"
+            width="0"
+            style={{ display: "none", visibility: "hidden" }}
+          />
+        </noscript>
+        {/* End Google Tag Manager (noscript) */}
+
         {/* Brand canvas: warped green grid + edge glow, fixed behind everything */}
         <Background />
         {children}
       </body>
-      <GoogleAnalytics gaId={GA_ID} />
     </html>
   );
 }
