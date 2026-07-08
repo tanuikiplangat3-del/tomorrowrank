@@ -91,6 +91,37 @@ async function upsertPerson(lead: Lead): Promise<string | null> {
  * shape differs. This makes the stage write reliable regardless of slug/casing.
  */
 let stageCache: { attr: string; status: string } | null = null;
+
+// The Deal "owner" field (actor-reference) is REQUIRED in this workspace. It must
+// point to a real workspace member, so we look one up (by ATTIO_DEAL_OWNER_EMAIL
+// if set, else the first member) and cache it.
+let ownerCache: { referenced_actor_type: string; referenced_actor_id: string } | null | undefined;
+async function resolveOwner(): Promise<{ referenced_actor_type: string; referenced_actor_id: string } | null> {
+  if (ownerCache !== undefined) return ownerCache;
+  const wantEmail = (process.env.ATTIO_DEAL_OWNER_EMAIL || "").trim().toLowerCase();
+  try {
+    const res = await attio<{ data?: { id?: { workspace_member_id?: string }; email_address?: string; first_name?: string; last_name?: string }[] }>(
+      `/workspace_members`,
+      "GET"
+    );
+    const members = res?.data ?? [];
+    console.log(`[attio] workspace members: ${members.map((m) => m.email_address).filter(Boolean).join(", ") || "none"}`);
+    const pick =
+      (wantEmail && members.find((m) => (m.email_address ?? "").toLowerCase() === wantEmail)) ||
+      members[0];
+    const id = pick?.id?.workspace_member_id;
+    if (id) {
+      console.log(`[attio] deal owner -> ${pick?.email_address ?? id}`);
+      ownerCache = { referenced_actor_type: "workspace-member", referenced_actor_id: id };
+      return ownerCache;
+    }
+  } catch (e: any) {
+    console.error(`[attio] could not resolve workspace member for owner: ${e?.message ?? e}`);
+  }
+  ownerCache = null;
+  return null;
+}
+
 async function resolveStage(dealsObject: string, preferAttr: string, wantTitle: string): Promise<{ attr: string; status: string } | null> {
   if (stageCache) return stageCache;
 
@@ -155,7 +186,7 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
   const leadSourceAttr = cfg("ATTIO_LEAD_SOURCE_ATTR", "lead_source");
   const leadSourceValue = cfg("ATTIO_LEAD_SOURCE_VALUE", "SEO");
   const stageAttr = cfg("ATTIO_STAGE_ATTR", "stage");
-  const stageCaptured = cfg("ATTIO_STAGE_CAPTURED", "Captured");
+  const stageCaptured = cfg("ATTIO_STAGE_CAPTURED", "Lead");
   const peopleObject = cfg("ATTIO_PEOPLE_OBJECT", "people");
 
   async function post(values: Record<string, unknown>) {
@@ -179,20 +210,25 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
   const website = lead.url ? { [websiteAttr]: lead.url } : {};
   const source = leadSourceAttr && leadSourceValue ? { [leadSourceAttr]: leadSourceValue } : {};
 
-  // Resolve the real pipeline status (attr + exact "Captured" title) from Attio.
+  // Resolve the real pipeline status (attr + exact stage title) from Attio.
   const resolved = await resolveStage(dealsObject, stageAttr, stageCaptured);
   const stage = resolved
     ? { [resolved.attr]: [{ status: resolved.status }] }
     : (stageAttr && stageCaptured ? { [stageAttr]: [{ status: stageCaptured }] } : {});
 
-  // The Deal's marketing PIPELINE (stage) is REQUIRED in this workspace — a Deal
-  // cannot be created without it — so we ALWAYS include it and never drop it.
+  // Deal owner (actor-reference) is REQUIRED in this workspace — resolve a real
+  // workspace member and always include it.
+  const ownerRef = await resolveOwner();
+  const owner = ownerRef ? { owner: [ownerRef] } : {};
+
+  // The Deal's PIPELINE (stage) and OWNER are REQUIRED in this workspace — a Deal
+  // cannot be created without them — so we ALWAYS include them and never drop them.
   // Only lead_source is optional (it may lack an "SEO" option), so that's the
   // one thing dropped if Attio rejects it.
   const attempts: { label: string; values: Record<string, unknown> }[] = [
-    { label: "full", values: { name, ...website, ...source, ...stage, ...link } },
-    { label: "no-source", values: { name, ...website, ...stage, ...link } },
-    { label: "stage-only", values: { name, ...stage, ...link } },
+    { label: "full", values: { name, ...website, ...source, ...stage, ...owner, ...link } },
+    { label: "no-source", values: { name, ...website, ...stage, ...owner, ...link } },
+    { label: "stage-owner-only", values: { name, ...stage, ...owner, ...link } },
   ];
 
   for (const attempt of attempts) {
@@ -203,8 +239,8 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
       }
       return data?.data?.id?.record_id ?? null;
     } catch (err) {
-      if (attempt.label === "stage-only") {
-        console.error(`[attio] Deal creation failed. Verify pipeline stage "${stageCaptured}" exists on attribute "${stageAttr}" and is writable:`, err);
+      if (attempt.label === "stage-owner-only") {
+        console.error(`[attio] Deal creation failed (stage="${stageCaptured}" owner=${ownerRef ? "set" : "MISSING"}):`, err);
       }
     }
   }

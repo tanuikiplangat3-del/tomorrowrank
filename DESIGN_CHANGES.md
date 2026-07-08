@@ -542,3 +542,15 @@ Logs pinpointed both:
 2. Attio Deal still missing required attribute 84e4e4e7-... The stage resolver returned nothing and fell back to the wrong slug. resolveStage now LOGS the Deal object's required attrs (title[slug/type]) and all status attrs, tries every status attribute, and logs the chosen attr/status. Next log tail will reveal the real pipeline slug + statuses (and whether 84e4e4e7 is even a status field or some other required field) so it can be set exactly.
 
 After deploy, the [attio] log lines will show: "deal required attrs: ...", "deal status attrs: ...", "statuses for X: ...". Paste those and Attio is solved.
+
+---
+
+## Update 32 — Attio SOLVED (required Deal owner) + checkbox copy + stage default
+
+Logs revealed the required field 84e4e4e7 = Deal OWNER (owner/actor-reference), which we never set. Also there is NO "Captured" stage (pipeline is Lead → Discovery Call → … → Won/Lost).
+1. Added resolveOwner(): fetches /workspace_members (by ATTIO_DEAL_OWNER_EMAIL if set, else first member), builds an actor-reference, caches it, logs the members + chosen owner. createDeal now ALWAYS includes owner (required) alongside name + stage. Attempts: full → no-source → stage-owner-only.
+2. Default stage changed "Captured" → "Lead" (the real first stage). Resolver still matches ATTIO_STAGE_CAPTURED if set.
+3. Checkbox copy updated: audit-consent → "I agree to receive my SEO audit by email from Welcome Tomorrow, with the option to be contacted about a customised report."; newsletter → "I'd like to receive Welcome Tomorrow's free bi-weekly newsletter."
+
+Report email confirmed SENT via Resend (log: sent id=...). Non-delivery is spam/DNS — check spam + Resend dashboard Emails for that message id (delivered/bounced).
+Optional env: ATTIO_DEAL_OWNER_EMAIL to choose which member owns the deals.

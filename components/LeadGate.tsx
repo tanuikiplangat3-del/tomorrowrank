@@ -80,8 +80,8 @@ export function LeadGate({
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 accent-wtgreen" />
             <span className="text-xs leading-relaxed text-muted">
-              I agree to receive the SEO audit on my email from Welcome Tomorrow, and possible reach-out if I&apos;d
-              like a customized report.
+              I agree to receive my SEO audit by email from Welcome Tomorrow, with the option to be
+              contacted about a customised report.
             </span>
           </label>
 
@@ -89,7 +89,7 @@ export function LeadGate({
             <input type="checkbox" checked={newsletter} onChange={(e) => setNewsletter(e.target.checked)}
               className="mt-0.5 h-4 w-4 shrink-0 accent-wtgreen" />
             <span className="text-xs leading-relaxed text-muted">
-              Subscribe me to the Welcome Tomorrow newsletter for SEO &amp; AI-visibility insights.
+              I&apos;d like to receive Welcome Tomorrow&apos;s free bi-weekly newsletter.
             </span>
           </label>
 
