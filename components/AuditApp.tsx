@@ -150,7 +150,7 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       {/* Heading — white, no underline (dark canvas) */}
       <div className="text-center">
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-paper sm:text-6xl">
-          Free SEO &amp; GEO Audit with RankTomorrow
+          Free, Simple SEO &amp; GEO Audit Tool
         </h1>
         <p className="mt-5 text-lg font-medium text-muted">
           Analyze your website&apos;s readiness for AI search engines. Get instant insights on how well

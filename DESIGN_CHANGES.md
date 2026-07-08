@@ -637,3 +637,12 @@ PENDING (needs user): favicon + thumbnail images — cannot pull from Google Dri
 
 Favicon -> https://i.imgur.com/pxoBmhP.png ; OG/Twitter thumbnail -> https://i.imgur.com/MYIJrl7.jpeg (referenced directly in metadata icons + openGraph/twitter images; no download needed since these are URL references).
 CAVEAT for user: hotlinking imgur is fine short-term but not ideal for a production site (imgur can rate-limit/remove). Recommended: upload both images into the repo (public/) later so they're served from your own domain — upload them to chat and I'll bundle them.
+
+---
+
+## Update 40 — Revisions: favicon/thumbnail, Edit-email UX, hero H1, Why RankTomorrow
+
+1. Favicon + OG/Twitter thumbnail both -> https://i.imgur.com/JTyaf8H.jpeg (replaces prior).
+2. LeadGate mismatch: "Edit email" now calls editEmail() -> dismisses both mismatch CTAs, KEEPS all entered details, and focuses+selects the email field so the user edits and hits Run (no restart). Fields were already controlled/retained; added the focus + clearer handler.
+3. Hero H1 -> "Free, Simple SEO & GEO Audit Tool" (removed RankTomorrow from the headline).
+4. Added "Why RankTomorrow?" content block just before the FAQ (4 paragraphs, provided copy, no em-dashes, tidied "it`s"->its and on page->on-page).

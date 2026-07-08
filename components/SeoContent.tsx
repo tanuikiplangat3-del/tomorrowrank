@@ -101,6 +101,39 @@ export function SeoContent() {
         ))}
       </div>
 
+      {/* WHY RANKTOMORROW */}
+      <div className="mx-auto mt-24 max-w-3xl">
+        <div className="text-center">
+          <span className="text-xs font-bold uppercase tracking-[0.2em] text-wtgreen">Why RankTomorrow</span>
+          <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-paper sm:text-4xl">
+            Why RankTomorrow?
+          </h2>
+        </div>
+        <div className="mt-8 space-y-5 text-base leading-relaxed text-muted sm:text-lg">
+          <p>
+            Getting your website to rank in Google is harder and more competitive than ever. There are
+            many factors such as on-page content, performance, social factors, and backlink profile that
+            search engines like Google use to determine which sites should rank highest.
+          </p>
+          <p>
+            And to top it off, the new challenge of LLM &amp; AI search visibility presents a bunch of new
+            important factors to consider.
+          </p>
+          <p>
+            RankTomorrow is a free SEO Audit &amp; AI Visibility Tool that will perform a detailed SEO / GEO
+            analysis across 100 website data points, and provide clear and actionable recommendations for
+            steps you can take to improve your online presence and ultimately rank better in search engine
+            results and LLMs. RankTomorrow is ideal for businesses, marketers, or agencies who want to
+            improve their own sites.
+          </p>
+          <p>
+            RankTomorrow is better than other website SEO checkers through its super-fast SEO analysis
+            execution, JavaScript rendering, and breadth of features. We&apos;ve also added a bunch of
+            checks for things critical to LLMs.
+          </p>
+        </div>
+      </div>
+
       {/* FAQ */}
       <div className="mx-auto mt-24 max-w-3xl">
         <div className="text-center">

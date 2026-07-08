@@ -4,7 +4,7 @@
 // after a valid submission (enforced server-side too). No close/X, no
 // outside-click dismiss, no ESC — it resolves only on success.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiPath } from "./Gate";
 import { emailMatchesSite, siteHost } from "@/lib/leadmatch";
 import { gtmEvent } from "@/lib/gtm";
@@ -25,6 +25,15 @@ export function LeadGate({
   const [error, setError] = useState<string | null>(null);
   const [mismatch, setMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  function editEmail() {
+    // Dismiss both mismatch CTAs, keep everything the user already typed, and
+    // drop the cursor into the email field so they can fix it and hit Run.
+    setMismatch(false);
+    setError(null);
+    setTimeout(() => { emailRef.current?.focus(); emailRef.current?.select(); }, 0);
+  }
 
   async function submit() {
     setError(null);
@@ -75,7 +84,7 @@ export function LeadGate({
             <input className={field} placeholder="First name" value={firstName} onChange={(e) => setFirst(e.target.value)} />
             <input className={field} placeholder="Last name" value={lastName} onChange={(e) => setLast(e.target.value)} />
           </div>
-          <input className={field} type="email" placeholder="Company email (no Gmail/Yahoo)" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input ref={emailRef} className={field} type="email" placeholder="Company email (no Gmail/Yahoo)" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className={field} placeholder="Position" value={position} onChange={(e) => setPosition(e.target.value)} />
 
           <label className="flex cursor-pointer items-start gap-2.5 pt-1">
@@ -115,7 +124,7 @@ export function LeadGate({
                 </a>
                 <button
                   type="button"
-                  onClick={() => { setMismatch(false); setError(null); }}
+                  onClick={editEmail}
                   className="flex-1 rounded-md border border-glassBorder px-4 py-2 text-center text-sm font-semibold text-paper transition hover:border-wtgreen"
                 >
                   Edit email

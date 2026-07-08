@@ -8,8 +8,8 @@ const GTM_ID = "GTM-PVGW8KF";
 const SITE = "https://tools.welcometomorrow.io";
 const PATH = "/ranktomorrow";
 // Brand assets provided by the team (hosted on imgur).
-const FAVICON = "https://i.imgur.com/pxoBmhP.png";
-const THUMB = "https://i.imgur.com/MYIJrl7.jpeg";
+const FAVICON = "https://i.imgur.com/JTyaf8H.jpeg";
+const THUMB = "https://i.imgur.com/JTyaf8H.jpeg";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
