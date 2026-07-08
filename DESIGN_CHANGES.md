@@ -459,3 +459,52 @@ Still remaining in B: Ahrefs top-50-pages endpoint instead of crawl; replace sen
 5. **Report-after-refresh.** leadId is persisted in the URL (?job=&lead=) via a ref (no stale closure), so the "receive report" button still has a recipient after a refresh. Report route now logs each step (narrative/pdf/RESEND) distinctly to pinpoint failures.
 
 Still TODO (Part B): Ahrefs top-50-pages endpoint; AI-Overview + citations dashboard replacing sentiment; crawl-page JS rendering. Also: add RESEND to health display.
+
+---
+
+## Update 26 — Spin-proofing (deadline in job) + removed Vercel leftovers
+
+Found the real cause of heavy-site spinning: with RUN_AUDIT_INLINE the audit runs in-process; a heavy site (welcometomorrow.io — stealth crawl + big HTML) can make the container restart, which kills the in-process watchdog and leaves the job stuck at "running" in Redis forever → UI spins with no way out.
+
+Fixes:
+1. **Deadline stored ON the job** (deadlineAt) at creation: internal ~3.5 min, external ~2 min. The STATUS endpoint now reports any "running"/"queued" job past its deadline as "error: Timed out" (and persists it). So an audit can NEVER spin forever, even if the container dies mid-run. This is the definitive guarantee.
+2. **Removed Vercel leftovers** the user asked about: dropped `waitUntil` from `@vercel/functions` in both start + run routes (they were dead in our inline mode but confusing). Audit now runs via plain `void runAudit()` in-process on Fargate.
+
+NOTE: if welcometomorrow.io now shows "Timed out" instead of spinning, that's the honest signal it's exceeding resources — next step would be lowering PROXY_CRAWL_MAX_PAGES_INTERNAL and/or raising the Fargate task memory. But it will no longer hang.
+
+Still TODO (Part B): Ahrefs top-50-pages; AI-Overview + citations dashboard; crawl-page JS rendering; RESEND in health display.
+
+---
+
+## Update 27 — Cloudflare bypass actually works now (zero-credits bug) + accurate H1/meta
+
+ROOT CAUSE of zero ScrapingBee credits + Cloudflare sites never bypassed + spinning:
+- When Cloudflare blocks a datacenter IP it DROPS the connection, so the direct fetch THROWS. The code set status=0 on throw, and looksBlocked(0,"") returned FALSE — so ScrapingBee was never called. Fixed: looksBlocked now treats status 0 (failed direct fetch) as blocked, so ScrapingBee is tried. Added "enable javascript and cookies" to the challenge patterns too.
+- Crawler now has a PER-PAGE fallback: any crawl page that is blocked (403/429/503) OR dropped (status 0) is retried through ScrapingBee stealth when CRAWL_VIA_SCRAPINGBEE=true — regardless of whether the homepage was flagged protected. So protected sub-pages get read and ScrapingBee credits actually get used.
+- Crawler also re-renders JS SHELL pages (200 but thin/framework markers/no H1) via cheap ScrapingBee render, so "missing H1/meta" lists are accurate (not false positives from unrendered JS).
+
+Combined with Update 26 (deadline-in-job) this means: protected sites are actually crawled via stealth (credits used, real data), and if a run still exceeds resources it times out cleanly instead of spinning.
+
+## STILL TODO — next focused pass (user's list, captured):
+- Dashboard: show only on-page/off-page from site audit + AI visibility.
+- Socials: keep ONLY Twitter card, Facebook, Instagram (1 each); remove YouTube, language, analytics.
+- Issues: confirm affected-URL lists are correct (now accurate via JS render).
+- Favicon + OG thumbnail for the tool; Outfit font everywhere incl menus; correct canonical + metadata on tool pages.
+- Remove any remaining demo actions.
+- Attio still not populating — NEED the exact [attio]/[lead] error line from logs to fix precisely.
+
+---
+
+## Update 28 — UI/branding cleanup (the remaining list)
+
+1. **Socials trimmed** to exactly three, one card each: "Facebook / Open Graph Card", "X (Twitter) Card", "Instagram Linked". Removed: analytics, language, hreflang-as-language, Facebook Page Linked, Facebook Pixel, X account-linked, YouTube, LinkedIn.
+2. **Dashboard focus.** Headline categories reduced to On-Page SEO, Links (off-page), GEO (AI visibility) — matching "on-page / off-page / AI visibility". Performance still shows its own section only when PageSpeed data exists.
+3. **Outfit font everywhere** — swapped Plus Jakarta Sans → Outfit in both the CSS vars and the Google Fonts link, so all text incl. menus/selects uses Outfit.
+4. **Favicon + OG thumbnail + canonical + SEO metadata** on the tool itself: metadataBase, canonical URL, icons (favicon/apple), Open Graph + Twitter card with the Welcome Tomorrow logo as the thumbnail, robots index/follow.
+5. **Removed demo** — deleted /app/preview (a page rendering hardcoded fake audit data) and updated the stale "not yet wired" ReportButton comment (report email is live).
+
+Issue affected-URL lists were already correct in code; accuracy now holds because crawl pages are JS-rendered (Update 27).
+
+## OUTSTANDING — needs your logs to finish:
+- Attio still not populating: paste the `[attio]` / `[lead] Attio` log line after a lead.
+- Resend "try again": paste the `[report/request] RESEND failed:` log line.

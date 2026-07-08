@@ -62,15 +62,8 @@ export function CtaButton({
 }
 
 /**
- * "Click to receive report" CTA.
- *
- * INTENDED FINAL BEHAVIOUR (not yet wired — depends on two unbuilt pieces):
- *   1. Email the full report to the lead's captured email  -> needs Resend
- *   2. Move the lead Captured -> Nurturing in Attio         -> needs Attio integration
- *
- * Until those exist, this posts to /api/report/request (a stub endpoint) which
- * currently just acknowledges. When Resend + Attio are ready, implement the
- * send + stage-move inside that route — the button here won't need to change.
+ * "Click to receive report" CTA. Emails the lead a Claude-generated PDF report
+ * of their audit via /api/report/request (Resend). Shows Sending → Sent / retry.
  */
 export function ReportButton({
   source,

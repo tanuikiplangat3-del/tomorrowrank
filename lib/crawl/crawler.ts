@@ -101,9 +101,44 @@ async function fetchText(
       "Upgrade-Insecure-Requests": "1",
     },
     signal: AbortSignal.timeout(timeoutMs),
-  });
-  const body = await res.text();
-  return { status: res.status, body, finalUrl: (res as any).url || url };
+  }).catch(() => null);
+
+  const direct = res
+    ? { status: res.status, body: await res.text().catch(() => ""), finalUrl: (res as any).url || url }
+    : { status: 0, body: "", finalUrl: url };
+
+  // Per-page fallback: if the direct fetch was blocked (403/429/503) OR the
+  // connection was dropped (status 0, typical of Cloudflare blocking datacenter
+  // IPs), and proxy crawling is enabled, retry THIS page through ScrapingBee
+  // stealth. This works even when the homepage itself wasn't flagged protected,
+  // so protected sub-pages are still read (and ScrapingBee actually gets used).
+  const blocked = direct.status === 0 || direct.status === 403 || direct.status === 429 || direct.status === 503;
+  const beeAllowed = process.env.CRAWL_VIA_SCRAPINGBEE === "true" && !!process.env.SCRAPINGBEE_API_KEY;
+
+  // A 200 that is really a client-rendered SHELL (little text, framework markers,
+  // no real H1) would make us falsely report "missing H1/meta". Re-render it.
+  const isShell = (() => {
+    if (direct.status !== 200 || !direct.body) return false;
+    const text = direct.body.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const hasH1 = /<h1\b/i.test(direct.body);
+    const markers = /__NEXT_DATA__|id=["']root["']|id=["']__next["']|data-reactroot|ng-version|__NUXT__/i.test(direct.body);
+    return text.length < 400 && (!hasH1 || markers);
+  })();
+
+  if ((blocked || isShell) && beeAllowed) {
+    // blocked -> use the strong proxy; a mere JS shell -> cheap render only.
+    const mode: ProxyMode = blocked ? ((process.env.SCRAPINGBEE_PROXY_MODE as ProxyMode) || "stealth") : "none";
+    try {
+      const r = await fetch(beeUrl(url, mode), {
+        signal: AbortSignal.timeout(Math.max(12_000, Math.min(timeoutMs, 25_000))),
+      });
+      const body = await r.text();
+      if (r.ok) return { status: 200, body, finalUrl: url };
+    } catch {
+      /* keep the direct result */
+    }
+  }
+  return direct;
 }
 
 // Parse <loc> entries from a sitemap or sitemap index (recurses one level).

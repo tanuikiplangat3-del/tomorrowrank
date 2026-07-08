@@ -103,8 +103,12 @@ async function scrapingBeeFetch(url: string, mode: "basic" | "premium" | "stealt
 // — many valid pages are short, and rendering every short page via ScrapingBee
 // blows the audit's time budget (the bug that made reports come back thin).
 function looksBlocked(status: number, html: string): boolean {
+  // status 0 = the direct fetch threw (connection reset/timeout). Cloudflare/WAF
+  // commonly drops datacenter-IP connections outright rather than returning 403,
+  // so treat a failed direct fetch as "blocked" and let ScrapingBee try instead.
+  if (status === 0) return true;
   if (status === 403 || status === 429 || status === 503) return true;
-  if (/just a moment|checking your browser|cf-browser-verification|attention required|cf-chl/i.test(html)) return true;
+  if (/just a moment|checking your browser|cf-browser-verification|attention required|cf-chl|enable javascript and cookies/i.test(html)) return true;
   return false;
 }
 

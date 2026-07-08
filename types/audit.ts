@@ -228,4 +228,5 @@ export interface AuditJob {
   error?: string;
   createdAt: string;
   updatedAt: string;
+  deadlineAt?: number;         // epoch ms; a running job past this is treated as timed-out
 }

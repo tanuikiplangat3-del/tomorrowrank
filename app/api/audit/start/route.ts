@@ -2,7 +2,6 @@
 // Creates a job, triggers the background runner, returns { jobId } immediately.
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { waitUntil } from "@vercel/functions";
 import type { AuditJob } from "@/types/audit";
 import { saveJob, updateJob, isRedisConfigured } from "@/lib/store/jobs";
 
@@ -49,6 +48,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Hard deadline stored ON the job. Even if the container restarts mid-audit
+    // (heavy sites can be memory-intensive) and the in-process watchdog dies, the
+    // status endpoint uses this to report the job as timed-out instead of letting
+    // the UI spin forever. Internal ~3.5 min, external ~2 min (matches the
+    // orchestrator's budget cap + buffer).
+    const hardCapMs = (body.internal === true ? 180_000 : 90_000) + 30_000;
+
     const job: AuditJob = {
       id: randomUUID(),
       status: "queued",
@@ -63,6 +69,7 @@ export async function POST(req: NextRequest) {
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      deadlineAt: Date.now() + hardCapMs,
     };
 
     await saveJob(job); // throws a clear message if Redis creds are wrong
@@ -79,9 +86,8 @@ export async function POST(req: NextRequest) {
         })
       );
     } else {
-      // Serverless (Vercel): trigger the background worker over HTTP.
-      // waitUntil keeps the function alive long enough to deliver the request.
-      const trigger = fetch(`${baseUrl(req)}/api/audit/run`, {
+      // Serverless fallback: trigger the background worker over HTTP (not awaited).
+      void fetch(`${baseUrl(req)}/api/audit/run`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -89,7 +95,6 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({ jobId: job.id }),
       }).catch(() => {});
-      waitUntil(trigger);
     }
 
     return NextResponse.json({ jobId: job.id });

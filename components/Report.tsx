@@ -6,7 +6,7 @@ import { AiVisibilitySection } from "./AiVisibility";
 import { SiteIssues } from "./SiteIssues";
 import { GateContext, CtaButton } from "./Gate";
 
-const HEADLINE_CATS = ["On-Page SEO", "GEO", "Links", "Usability", "Performance"] as const;
+const HEADLINE_CATS = ["On-Page SEO", "Links", "GEO"] as const;
 
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
 

@@ -259,37 +259,21 @@ export function runChecks(
     { weight: 1, recommendation: /[?&=]{2,}/.test(s.finalUrl) ? "Use clean, readable URLs." : undefined }));
   // Backlink-derived checks are appended later in the runner (need API data).
 
-  // ---------- ANALYTICS / OTHER ----------
-  checks.push(mk("analytics", "Analytics", "Other", s.hasGoogleAnalytics ? "pass" : "warn",
-    { weight: 1, recommendation: s.hasGoogleAnalytics ? undefined : "Install web analytics (e.g. GA4)." }));
+  // ---------- TECHNICAL / OTHER ----------
   checks.push(mk("robots-txt", "Robots.txt", "Other", s.robotsTxt.exists ? "pass" : "warn",
     { weight: 1, recommendation: s.robotsTxt.exists ? undefined : "Add a robots.txt file." }));
   checks.push(mk("blocked-robots", "Blocked by Robots.txt", "Other", s.robotsTxt.blocksAll ? "fail" : "pass",
     { weight: 3, recommendation: s.robotsTxt.blocksAll ? "Your robots.txt blocks all crawlers — remove the global Disallow." : undefined }));
   checks.push(mk("sitemap", "XML Sitemap", "Other", s.sitemap ? "pass" : "warn",
     { weight: 1, recommendation: s.sitemap ? undefined : "Publish an XML sitemap." }));
-  checks.push(mk("hreflang", "Hreflang Usage", "Other", s.hreflang.length ? "pass" : "info",
-    { weight: 0, value: s.hreflang.join(", ") || "none" }));
-  checks.push(mk("language", "Language", "Other", s.lang ? "pass" : "warn",
-    { weight: 1, value: s.lang ?? "not set", recommendation: s.lang ? undefined : "Set the <html lang> attribute." }));
 
-  // ---------- SOCIAL ----------
-  checks.push(mk("facebook", "Facebook Page Linked", "Social", s.social.facebook ? "pass" : "low" as any,
-    { weight: 1, status: s.social.facebook ? "pass" : "warn", recommendation: s.social.facebook ? undefined : "Link your Facebook page." }));
-  checks.push(mk("og-tags", "Facebook Open Graph Tags", "Social", s.ogTags > 0 ? "pass" : "warn",
-    { weight: 1, value: s.ogTags, recommendation: s.ogTags ? undefined : "Add Open Graph tags for rich social previews." }));
-  checks.push(mk("fb-pixel", "Facebook Pixel", "Social", s.hasFacebookPixel ? "pass" : "warn",
-    { weight: 1, recommendation: s.hasFacebookPixel ? undefined : "Install a Facebook Pixel for remarketing." }));
-  checks.push(mk("twitter", "X (Twitter) Account Linked", "Social", s.social.twitter ? "pass" : "warn",
-    { weight: 1, recommendation: s.social.twitter ? undefined : "Create and link your X profile." }));
-  checks.push(mk("twitter-cards", "X Cards", "Social", s.twitterCards > 0 ? "pass" : "warn",
-    { weight: 1, recommendation: s.twitterCards ? undefined : "Add Twitter Card meta tags." }));
+  // ---------- SOCIAL (kept lean: one card each for Facebook, X, Instagram) ----------
+  checks.push(mk("og-tags", "Facebook / Open Graph Card", "Social", s.ogTags > 0 ? "pass" : "warn",
+    { weight: 1, value: s.ogTags, recommendation: s.ogTags ? undefined : "Add Open Graph tags for rich Facebook/link previews." }));
+  checks.push(mk("twitter-cards", "X (Twitter) Card", "Social", s.twitterCards > 0 ? "pass" : "warn",
+    { weight: 1, recommendation: s.twitterCards ? undefined : "Add Twitter Card meta tags for rich previews on X." }));
   checks.push(mk("instagram", "Instagram Linked", "Social", s.social.instagram ? "pass" : "warn",
     { weight: 1, recommendation: s.social.instagram ? undefined : "Link your Instagram profile." }));
-  checks.push(mk("youtube", "YouTube Channel Linked", "Social", s.social.youtube ? "pass" : "warn",
-    { weight: 1, recommendation: s.social.youtube ? undefined : "Create and link an associated YouTube channel." }));
-  checks.push(mk("linkedin", "LinkedIn Page Linked", "Social", s.social.linkedin ? "pass" : "warn",
-    { weight: 1, recommendation: s.social.linkedin ? undefined : "Link your LinkedIn page." }));
 
   // ---------- LOCAL ----------
   checks.push(mk("address-phone", "Address & Phone Shown on Website", "Local",
