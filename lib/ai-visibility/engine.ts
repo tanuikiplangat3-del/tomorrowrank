@@ -246,25 +246,33 @@ async function runWithDataForSeo(
   onStage?: (stage: string, progress: number) => void
 ): Promise<AiVisibilityReport> {
   const loc = resolveLocation(country);
-  const locationCode = loc.locationCode ?? 2840;
+  const countryIso = loc.countryCode || undefined; // ISO-2 for ChatGPT web-search grounding
 
   // 1. Derive market context (category, competitors, buyer-intent prompts).
   onStage?.("Mapping your market & competitors", 10);
   const ctx = await deriveContext(brand, country, pageText);
 
-  // 2. FEATURE B — ask ChatGPT the real buyer-intent prompts (via DataForSEO).
+  // 2. FEATURE B — ask ChatGPT the real buyer-intent prompts (via DataForSEO),
+  //    grounding ChatGPT's web search to the AUDITED country (not the US default).
   onStage?.("Asking ChatGPT what it recommends", 35);
-  const gptAnswers = await chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT));
+  const gptAnswers = await chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso });
 
-  // 3. FEATURE A — check the real Google AI Overview for the brand's category.
+  // 3. FEATURE A — check the real Google AI Overview for the brand's category,
+  //    but ONLY when we have the audited country's real DataForSEO location code.
+  //    We never fall back to USA — showing US AI-Overview data for a non-US audit
+  //    would be misleading, so we skip it instead.
   onStage?.("Reading Google AI Overview citations", 60);
   let aiOverview: Awaited<ReturnType<typeof googleAiOverview>> = {
     present: false, citedDomains: [], references: [],
   };
-  try {
-    aiOverview = await googleAiOverview(ctx.category, locationCode);
-  } catch {
-    /* no AI overview / call failed */
+  if (loc.locationCode) {
+    try {
+      aiOverview = await googleAiOverview(ctx.category, loc.locationCode);
+    } catch {
+      /* no AI overview / call failed */
+    }
+  } else {
+    console.warn(`[ai-visibility] no DataForSEO location code for "${country}" — skipping AI Overview to avoid wrong-country data.`);
   }
 
   // 4. Probes from the REAL ChatGPT answers.

@@ -126,55 +126,70 @@ async function resolveStage(dealsObject: string, preferAttr: string, wantTitle: 
   if (stageCache) return stageCache;
 
   const wanted = wantTitle.trim().toLowerCase();
-  const tryAttr = async (attr: string): Promise<{ attr: string; status: string } | null> => {
+
+  // Fetch the statuses of one status attribute.
+  const getStatuses = async (attr: string): Promise<{ title: string }[]> => {
     try {
-      const res = await attio<{ data?: { title?: string; id?: { status_id?: string } }[] }>(
+      const res = await attio<{ data?: { title?: string }[] }>(
         `/objects/${dealsObject}/attributes/${attr}/statuses`,
         "GET"
       );
-      const statuses = res?.data ?? [];
-      if (!statuses.length) return null;
-      console.log(`[attio] statuses for "${attr}": ${statuses.map((s) => s.title).join(" | ")}`);
-      const match =
-        statuses.find((s) => (s.title ?? "").trim().toLowerCase() === wanted) ??
-        statuses.find((s) => (s.title ?? "").trim().toLowerCase().includes(wanted)) ??
-        statuses[0]; // first stage of the pipeline as a safe default
-      if (match?.title) return { attr, status: match.title };
+      return (res?.data ?? []).filter((s): s is { title: string } => !!s.title);
     } catch {
-      /* attr not a status field / not found */
+      return [];
     }
-    return null;
   };
 
-  // Discover the Deal object's attributes and LOG them so we can see exactly
-  // which fields are required and which is the pipeline/status field.
+  // Log the workspace objects once — reveals if the "marketing pipeline" is a
+  // separate object rather than a status field on Deals.
+  try {
+    const objs = await attio<{ data?: { api_slug?: string; singular_noun?: string }[] }>(`/objects`, "GET");
+    console.log(`[attio] objects: ${(objs?.data ?? []).map((o) => o.api_slug).filter(Boolean).join(", ")}`);
+  } catch { /* ignore */ }
+
+  // Discover ALL status attributes on the Deal object and log each one's stages.
   let statusSlugs: string[] = [];
   try {
-    const attrs = await attio<{ data?: { api_slug?: string; type?: string; is_required?: boolean; title?: string; id?: { attribute_id?: string } }[] }>(
+    const attrs = await attio<{ data?: { api_slug?: string; type?: string; is_required?: boolean; title?: string }[] }>(
       `/objects/${dealsObject}/attributes?limit=100`,
       "GET"
     );
     const list = attrs?.data ?? [];
-    const required = list.filter((a) => a.is_required).map((a) => `${a.title}[${a.api_slug}/${a.type}]`);
-    console.log(`[attio] deal required attrs: ${required.join(", ") || "none"}`);
+    console.log(`[attio] deal required attrs: ${list.filter((a) => a.is_required).map((a) => `${a.title}[${a.api_slug}/${a.type}]`).join(", ") || "none"}`);
     statusSlugs = list.filter((a) => a.type === "status" && a.api_slug).map((a) => a.api_slug!) as string[];
     console.log(`[attio] deal status attrs: ${statusSlugs.join(", ") || "none"}`);
   } catch (e: any) {
     console.error(`[attio] could not list deal attributes: ${e?.message ?? e}`);
   }
 
-  // Try the configured attr first, then every status-type attribute discovered.
-  let resolved = await tryAttr(preferAttr);
-  for (const slug of statusSlugs) {
-    if (resolved) break;
-    resolved = await tryAttr(slug);
+  // Consider the preferred attr first, then every discovered status attr.
+  const ordered = [preferAttr, ...statusSlugs.filter((s) => s !== preferAttr)];
+
+  // Pass 1: find the attribute that actually CONTAINS the wanted stage
+  // (e.g. "Captured" — which may live on the marketing pipeline field, not "stage").
+  let fallback: { attr: string; status: string } | null = null;
+  for (const attr of ordered) {
+    const statuses = await getStatuses(attr);
+    if (!statuses.length) continue;
+    console.log(`[attio] statuses for "${attr}": ${statuses.map((s) => s.title).join(" | ")}`);
+    const exact = statuses.find((s) => s.title.trim().toLowerCase() === wanted);
+    const partial = statuses.find((s) => s.title.trim().toLowerCase().includes(wanted));
+    const hit = exact ?? partial;
+    if (hit) {
+      const resolved = { attr, status: hit.title };
+      console.log(`[attio] matched wanted stage "${wantTitle}" -> attr "${attr}" = "${hit.title}"`);
+      stageCache = resolved;
+      return resolved;
+    }
+    // remember the first pipeline's first stage as a last-resort fallback
+    if (!fallback) fallback = { attr, status: statuses[0].title };
   }
 
-  if (resolved) {
-    console.log(`[attio] using stage attr "${resolved.attr}" = "${resolved.status}"`);
-    stageCache = resolved;
+  if (fallback) {
+    console.warn(`[attio] wanted stage "${wantTitle}" not found on any pipeline; using "${fallback.attr}" = "${fallback.status}". Set ATTIO_STAGE_ATTR + ATTIO_STAGE_CAPTURED to target the right pipeline/stage.`);
+    stageCache = fallback;
   }
-  return resolved;
+  return fallback;
 }
 
 /**
@@ -186,7 +201,7 @@ async function createDeal(lead: Lead, personId: string | null): Promise<string |
   const leadSourceAttr = cfg("ATTIO_LEAD_SOURCE_ATTR", "lead_source");
   const leadSourceValue = cfg("ATTIO_LEAD_SOURCE_VALUE", "SEO");
   const stageAttr = cfg("ATTIO_STAGE_ATTR", "stage");
-  const stageCaptured = cfg("ATTIO_STAGE_CAPTURED", "Lead");
+  const stageCaptured = cfg("ATTIO_STAGE_CAPTURED", "Captured");
   const peopleObject = cfg("ATTIO_PEOPLE_OBJECT", "people");
 
   async function post(values: Record<string, unknown>) {

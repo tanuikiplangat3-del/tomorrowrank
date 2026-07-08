@@ -84,17 +84,26 @@ export interface ChatGptAnswer {
 
 export async function chatGptAnswer(
   prompt: string,
-  model = "gpt-4o-mini"
+  opts: { model?: string; countryIso?: string; city?: string } = {}
 ): Promise<ChatGptAnswer> {
-  const data = await post("/ai_optimization/chat_gpt/llm_responses/live", [
-    {
-      user_prompt: prompt,
-      model_name: model,
-      max_output_tokens: 1024,
-      system_message: "You are a helpful assistant that provides accurate information.",
-      web_search: true,
-    },
-  ]);
+  const { model = "gpt-4o-mini", countryIso, city } = opts;
+  const task: Record<string, unknown> = {
+    user_prompt: prompt,
+    model_name: model,
+    max_output_tokens: 1024,
+    system_message: countryIso
+      ? `You are a helpful assistant answering for a user located in ${countryIso}. Give accurate, up-to-date information relevant to that market.`
+      : "You are a helpful assistant that provides accurate information.",
+    web_search: true,
+  };
+  // Focus the model's web search on the AUDITED country so ChatGPT answers for
+  // that market (e.g. Kenya), not the US default. Supported by ChatGPT models.
+  if (countryIso) {
+    task.web_search_country_iso_code = countryIso.toUpperCase();
+    task.force_web_search = true;
+    if (city) task.web_search_city = city;
+  }
+  const data = await post("/ai_optimization/chat_gpt/llm_responses/live", [task]);
   const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
   // The answer is in the "message" item's text section(s).
   let answer = "";
@@ -108,9 +117,13 @@ export async function chatGptAnswer(
   return { prompt, answer: answer.trim() };
 }
 
-// Ask several prompts in parallel; return their answers (best-effort).
-export async function chatGptAnswers(prompts: string[]): Promise<ChatGptAnswer[]> {
-  const results = await Promise.allSettled(prompts.map((p) => chatGptAnswer(p)));
+// Ask several prompts in parallel; return their answers (best-effort). The
+// countryIso grounds each answer to the audited market.
+export async function chatGptAnswers(
+  prompts: string[],
+  opts: { countryIso?: string; city?: string } = {}
+): Promise<ChatGptAnswer[]> {
+  const results = await Promise.allSettled(prompts.map((p) => chatGptAnswer(p, opts)));
   return results
     .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
     .map((r) => r.value);

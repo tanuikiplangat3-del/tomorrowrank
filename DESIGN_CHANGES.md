@@ -554,3 +554,27 @@ Logs revealed the required field 84e4e4e7 = Deal OWNER (owner/actor-reference), 
 
 Report email confirmed SENT via Resend (log: sent id=...). Non-delivery is spam/DNS — check spam + Resend dashboard Emails for that message id (delivered/bounced).
 Optional env: ATTIO_DEAL_OWNER_EMAIL to choose which member owns the deals.
+
+---
+
+## Update 33 — DataForSEO AI calls now match the SELECTED country (verified vs live docs)
+
+Verified against DataForSEO docs that the ChatGPT LLM Responses endpoint supports web_search_country_iso_code (+ web_search_city) to focus the model's web search on a country, and that AI Overview uses location_code + language_code.
+1. ChatGPT: chatGptAnswer/chatGptAnswers now accept { countryIso } and send web_search_country_iso_code = the audited country's ISO-2 (e.g. "KE"), force_web_search=true, and a system_message stating the user's location — so ChatGPT answers for the audited market, NOT the US default. Works for EVERY country (ISO-2 is always known).
+2. Google AI Overview: now runs ONLY when the audited country has a real DataForSEO location_code (Kenya, US, UK, Nigeria, SA, Ghana, Tanzania, Uganda mapped). For unmapped countries it SKIPS AI Overview and logs a warning, instead of silently querying the USA — no more wrong-country AI-Overview data.
+
+Note: DataForSEO country location codes follow 2000 + ISO-3166 numeric; the mapped set covers the tool's primary markets. To add AI Overview for more countries later, add their locationCode in lib/locations.ts.
+
+---
+
+## Update 34 — Attio: write to the CAPTURED stage of the right pipeline (multi-status search)
+
+User reported deals not appearing where expected + asked to confirm "Captured" stage. Truth: we were writing to the "stage" (sales) pipeline at "Lead". The Deal object has TWO status attributes (stage, captured_contact) — the marketing pipeline / "Captured" stage lives on a different one.
+Fix: resolveStage now:
+1. Lists all workspace OBJECTS (logs them — reveals a separate marketing pipeline object if one exists).
+2. Lists ALL status attributes on the Deal object and logs each one's stages.
+3. Searches EVERY status attribute for the wanted stage ("Captured", default) and writes to whichever pipeline actually contains it (so a lead lands at "Captured" on the marketing pipeline, not "Lead" on sales).
+4. Falls back to the first pipeline's first stage only if "Captured" exists nowhere, with a warning to set ATTIO_STAGE_ATTR + ATTIO_STAGE_CAPTURED.
+Default wanted stage reverted to "Captured".
+
+After deploy the logs will show: objects, statuses for "stage", statuses for "captured_contact", and "[attio] matched wanted stage Captured -> attr ... = ...". If Captured isn't found, we'll see every pipeline's stages and can target exactly (incl. a separate object via ATTIO_DEALS_OBJECT).
