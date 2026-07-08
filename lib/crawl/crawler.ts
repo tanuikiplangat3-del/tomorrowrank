@@ -66,7 +66,14 @@ function beeUrl(url: string, mode: ProxyMode): string {
     render_js: "true",
   });
   if (mode === "premium") params.set("premium_proxy", "true");
-  if (mode === "stealth") params.set("stealth_proxy", "true"); // strongest — defeats Cloudflare/WAF
+  if (mode === "stealth") {
+    // Cloudflare/WAF: stealth proxy + let all resources load so the challenge JS
+    // can run, give ScrapingBee time to solve it, and wait for the page to settle.
+    params.set("stealth_proxy", "true");
+    params.set("block_resources", "false");
+    params.set("timeout", "40000");     // ScrapingBee server-side budget (ms)
+    params.set("wait_browser", "networkidle2");
+  }
   return `https://app.scrapingbee.com/api/v1/?${params.toString()}`;
 }
 
@@ -80,8 +87,11 @@ async function fetchText(
   // site be crawled like a normal site.
   if (proxy !== "none" && process.env.SCRAPINGBEE_API_KEY) {
     try {
+      // Stealth needs time to solve the Cloudflare challenge (server-side up to
+      // 40s). Allow ~50s client-side so we don't abort a call that would succeed.
+      const beeTimeout = proxy === "stealth" ? 50_000 : 30_000;
       const r = await fetch(beeUrl(url, proxy), {
-        signal: AbortSignal.timeout(Math.max(10_000, Math.min(timeoutMs, 30_000))),
+        signal: AbortSignal.timeout(beeTimeout),
       });
       const body = await r.text();
       if (r.ok) return { status: 200, body, finalUrl: url };
@@ -90,6 +100,12 @@ async function fetchText(
       return { status: 0, body: "", finalUrl: url };
     }
   }
+
+  const beeAllowed = process.env.CRAWL_VIA_SCRAPINGBEE === "true" && !!process.env.SCRAPINGBEE_API_KEY;
+  // If a ScrapingBee fallback is available, don't waste the full timeout on a
+  // page the site is going to block — fail the direct attempt fast (7s) and move
+  // straight to stealth. Otherwise use the normal timeout.
+  const directTimeout = beeAllowed ? Math.min(timeoutMs, 7_000) : timeoutMs;
 
   const res = await fetch(url, {
     redirect: "follow",
@@ -100,7 +116,7 @@ async function fetchText(
       "Accept-Encoding": "gzip, deflate, br",
       "Upgrade-Insecure-Requests": "1",
     },
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(directTimeout),
   }).catch(() => null);
 
   const direct = res
@@ -113,7 +129,6 @@ async function fetchText(
   // stealth. This works even when the homepage itself wasn't flagged protected,
   // so protected sub-pages are still read (and ScrapingBee actually gets used).
   const blocked = direct.status === 0 || direct.status === 403 || direct.status === 429 || direct.status === 503;
-  const beeAllowed = process.env.CRAWL_VIA_SCRAPINGBEE === "true" && !!process.env.SCRAPINGBEE_API_KEY;
 
   // A 200 that is really a client-rendered SHELL (little text, framework markers,
   // no real H1) would make us falsely report "missing H1/meta". Re-render it.
@@ -129,8 +144,9 @@ async function fetchText(
     // blocked -> use the strong proxy; a mere JS shell -> cheap render only.
     const mode: ProxyMode = blocked ? ((process.env.SCRAPINGBEE_PROXY_MODE as ProxyMode) || "stealth") : "none";
     try {
+      const beeTimeout = mode === "stealth" ? 50_000 : 30_000;
       const r = await fetch(beeUrl(url, mode), {
-        signal: AbortSignal.timeout(Math.max(12_000, Math.min(timeoutMs, 25_000))),
+        signal: AbortSignal.timeout(beeTimeout),
       });
       const body = await r.text();
       if (r.ok) return { status: 200, body, finalUrl: url };

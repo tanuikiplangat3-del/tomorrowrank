@@ -85,15 +85,28 @@ async function scrapingBeeFetch(url: string, mode: "basic" | "premium" | "stealt
     render_js: "true",
   });
   if (mode === "premium") params.set("premium_proxy", "true");
-  if (mode === "stealth") params.set("stealth_proxy", "true"); // strongest: defeats Cloudflare/WAF
+  if (mode === "stealth") {
+    // Cloudflare/WAF: let resources load so the challenge runs, and give
+    // ScrapingBee server-side time to solve it before we read the page.
+    params.set("stealth_proxy", "true");
+    params.set("block_resources", "false");
+    params.set("timeout", "40000");
+    params.set("wait_browser", "networkidle2");
+  }
+  // Stealth needs time to solve the challenge; don't abort a call that'd succeed.
+  const clientTimeout = mode === "stealth" ? 50_000 : timeoutMs;
   try {
     const res = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(clientTimeout),
     });
     const html = await res.text();
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[scrapingbee] ${mode} failed for ${url}: HTTP ${res.status} ${html.slice(0, 160)}`);
+      return null;
+    }
     return { status: 200, html, finalUrl: url };
-  } catch {
+  } catch (e: any) {
+    console.error(`[scrapingbee] ${mode} threw for ${url}: ${e?.message ?? e}`);
     return null;
   }
 }

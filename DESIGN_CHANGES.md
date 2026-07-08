@@ -508,3 +508,37 @@ Issue affected-URL lists were already correct in code; accuracy now holds becaus
 ## OUTSTANDING — needs your logs to finish:
 - Attio still not populating: paste the `[attio]` / `[lead] Attio` log line after a lead.
 - Resend "try again": paste the `[report/request] RESEND failed:` log line.
+
+---
+
+## Update 29 — Protected audits COMPLETE (sample crawl) instead of timing out
+
+The timeout on welcometomorrow.io was because stealth-scraping a big Cloudflare site means hundreds of ~10-20s browser fetches — impossible inside one web request. Fixes so it completes:
+1. When ScrapingBee bypass is enabled, the crawl now takes a SMALL representative SAMPLE (internal 20, external 10 — env PROXY_CRAWL_MAX_PAGES_INTERNAL / PROXY_CRAWL_MAX_PAGES) so the run fits the time budget with real multi-page data instead of hitting the deadline.
+2. Direct fetch now FAILS FAST (7s) when a ScrapingBee fallback exists, so blocked pages don't burn the full timeout before the stealth retry.
+
+HONEST REALITY: ScrapingBee bypasses individual protected pages well, but a FULL deep crawl of a large Cloudflare site can't be done synchronously — that needs a background job (future) or, for their OWN site (welcometomorrow.io), allowlisting the crawler in Cloudflare so the direct 500-page crawl works fast + free. The sample gives an accurate audit that completes now.
+
+Diagnostic needed: confirm ScrapingBee credits are being consumed (proves bypass fires) + the [attio]/[report request RESEND] log lines.
+
+---
+
+## Update 30 — ScrapingBee Cloudflare config fixed (was aborting before the challenge solved)
+
+Per ScrapingBee's own guidance, the params were right (render_js + stealth_proxy) but my TIMEOUT was too short: stealth needs ~30-40s to solve a Cloudflare challenge, and I was aborting the call at 22-25s — so it failed before succeeding (and burned ~no credits). Fixes:
+1. Stealth requests now send: render_js=true, stealth_proxy=true, block_resources=false (so the challenge JS runs), timeout=40000 (ScrapingBee server-side), wait_browser=networkidle2.
+2. Client-side abort raised to 50s for stealth calls (main page, straight-through crawl, and per-page fallback) so a call that would succeed isn't killed early.
+3. Every ScrapingBee failure is now logged ([scrapingbee] ... failed/threw ...) so we can see exactly what Cloudflare returns.
+4. External budget raised to 120s (+ job deadline synced) to fit a stealth main-page fetch.
+
+Expected result: the MAIN page of a Cloudflare site now actually gets through (real audit + credits consumed), plus a small sampled crawl. If a stealth call still fails, the [scrapingbee] log line will show why.
+
+---
+
+## Update 31 — Fix report PDF crash (Resend) + Attio required-field diagnostics
+
+Logs pinpointed both:
+1. RESEND "try again" was actually the PDF crashing: pdf-lib standard fonts use WinAnsi and threw on "≤" from Claude's narrative. Added sanitize() in lib/report/pdf.ts mapping ≤,≥,→,×,•,smart quotes,em-dash,…,™,® to safe equivalents and stripping any remaining non-Latin1 chars, applied to all wrapped text. PDF now renders → email sends.
+2. Attio Deal still missing required attribute 84e4e4e7-... The stage resolver returned nothing and fell back to the wrong slug. resolveStage now LOGS the Deal object's required attrs (title[slug/type]) and all status attrs, tries every status attribute, and logs the chosen attr/status. Next log tail will reveal the real pipeline slug + statuses (and whether 84e4e4e7 is even a status field or some other required field) so it can be set exactly.
+
+After deploy, the [attio] log lines will show: "deal required attrs: ...", "deal status attrs: ...", "statuses for X: ...". Paste those and Attio is solved.

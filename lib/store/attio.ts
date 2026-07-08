@@ -103,6 +103,7 @@ async function resolveStage(dealsObject: string, preferAttr: string, wantTitle: 
       );
       const statuses = res?.data ?? [];
       if (!statuses.length) return null;
+      console.log(`[attio] statuses for "${attr}": ${statuses.map((s) => s.title).join(" | ")}`);
       const match =
         statuses.find((s) => (s.title ?? "").trim().toLowerCase() === wanted) ??
         statuses.find((s) => (s.title ?? "").trim().toLowerCase().includes(wanted)) ??
@@ -114,24 +115,34 @@ async function resolveStage(dealsObject: string, preferAttr: string, wantTitle: 
     return null;
   };
 
-  // 1. Try the configured/likely attribute first.
-  let resolved = await tryAttr(preferAttr);
-
-  // 2. Otherwise discover the first status-type attribute on the Deal object.
-  if (!resolved) {
-    try {
-      const attrs = await attio<{ data?: { api_slug?: string; type?: string }[] }>(
-        `/objects/${dealsObject}/attributes?limit=100`,
-        "GET"
-      );
-      const statusAttr = (attrs?.data ?? []).find((a) => a.type === "status" && a.api_slug);
-      if (statusAttr?.api_slug) resolved = await tryAttr(statusAttr.api_slug);
-    } catch {
-      /* ignore */
-    }
+  // Discover the Deal object's attributes and LOG them so we can see exactly
+  // which fields are required and which is the pipeline/status field.
+  let statusSlugs: string[] = [];
+  try {
+    const attrs = await attio<{ data?: { api_slug?: string; type?: string; is_required?: boolean; title?: string; id?: { attribute_id?: string } }[] }>(
+      `/objects/${dealsObject}/attributes?limit=100`,
+      "GET"
+    );
+    const list = attrs?.data ?? [];
+    const required = list.filter((a) => a.is_required).map((a) => `${a.title}[${a.api_slug}/${a.type}]`);
+    console.log(`[attio] deal required attrs: ${required.join(", ") || "none"}`);
+    statusSlugs = list.filter((a) => a.type === "status" && a.api_slug).map((a) => a.api_slug!) as string[];
+    console.log(`[attio] deal status attrs: ${statusSlugs.join(", ") || "none"}`);
+  } catch (e: any) {
+    console.error(`[attio] could not list deal attributes: ${e?.message ?? e}`);
   }
 
-  if (resolved) stageCache = resolved;
+  // Try the configured attr first, then every status-type attribute discovered.
+  let resolved = await tryAttr(preferAttr);
+  for (const slug of statusSlugs) {
+    if (resolved) break;
+    resolved = await tryAttr(slug);
+  }
+
+  if (resolved) {
+    console.log(`[attio] using stage attr "${resolved.attr}" = "${resolved.status}"`);
+    stageCache = resolved;
+  }
   return resolved;
 }
 

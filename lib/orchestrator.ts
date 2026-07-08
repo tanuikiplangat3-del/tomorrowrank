@@ -60,7 +60,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
   // lower these, not raise them past the cap.
   const BUDGET_MS = job.input.internal
     ? Math.min(Number(process.env.AUDIT_BUDGET_MS) || 180_000, 180_000)
-    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 90_000, 90_000);
+    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 120_000, 120_000);
   const startedAt = Date.now();
   const remaining = () => Math.max(0, BUDGET_MS - (Date.now() - startedAt));
 
@@ -188,10 +188,11 @@ export async function runAudit(job: AuditJob): Promise<void> {
           }
         }
         if (!siteIssues) {
-          // Decide how to crawl. If the main page was bot-protected (Cloudflare/
-          // WAF) and proxy crawling is enabled, route the WHOLE crawl through
-          // ScrapingBee's stealth proxy so protected pages are read like a normal
-          // site. Proxying costs credits, so cap the page count when proxying.
+          // Decide how to crawl. ScrapingBee (stealth) can bypass Cloudflare/WAF
+          // per page, but each page is a full browser render (~10-20s), so a big
+          // protected site can't be fully crawled inside one request. When bypass
+          // is enabled we therefore crawl a SMALL representative SAMPLE so the
+          // audit always COMPLETES with real multi-page data instead of timing out.
           const proxyEnabled = process.env.CRAWL_VIA_SCRAPINGBEE === "true" && scrapingBeeConfigured();
           const useProxy = proxyEnabled && !!signals.protected;
           const proxyMode = (process.env.SCRAPINGBEE_PROXY_MODE as "premium" | "stealth") || "stealth";
@@ -199,19 +200,20 @@ export async function runAudit(job: AuditJob): Promise<void> {
           const baseMax = job.input.internal
             ? (Number(process.env.CRAWL_MAX_PAGES_INTERNAL) || 500)
             : (Number(process.env.CRAWL_MAX_PAGES) || 50);
-          // Credit + speed guard: proxied (stealth) pages are slow (~10-20s each)
-          // and costly, so when proxying we crawl a fast representative sample.
-          const proxyCap = job.input.internal
-            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 30)
-            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 12);
-          const maxPages = useProxy ? Math.min(baseMax, proxyCap) : baseMax;
+          // When ScrapingBee may be used (any page could need slow stealth), cap
+          // to a small sample so the run fits the time budget. Direct (unprotected)
+          // sites keep the full page count.
+          const sampleCap = job.input.internal
+            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 20)
+            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 10);
+          const maxPages = proxyEnabled ? Math.min(baseMax, sampleCap) : baseMax;
 
           const crawl = await withTimeout(
             crawlSite(signals.finalUrl, {
               deadlineMs: crawlBudget,
               maxPages,
               proxy: useProxy ? proxyMode : "none",
-              concurrency: useProxy ? 8 : 5,
+              concurrency: useProxy ? 6 : 5,
             }),
             crawlBudget
           );

@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     // status endpoint uses this to report the job as timed-out instead of letting
     // the UI spin forever. Internal ~3.5 min, external ~2 min (matches the
     // orchestrator's budget cap + buffer).
-    const hardCapMs = (body.internal === true ? 180_000 : 90_000) + 30_000;
+    const hardCapMs = (body.internal === true ? 180_000 : 120_000) + 30_000;
 
     const job: AuditJob = {
       id: randomUUID(),

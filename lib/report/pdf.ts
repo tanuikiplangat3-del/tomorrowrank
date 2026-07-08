@@ -28,8 +28,24 @@ const PAGE_H = 841.89;
 const MARGIN = 56;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 
+// pdf-lib standard fonts use WinAnsi (CP1252) and throw on characters outside it
+// (≤, ≥, →, ×, emoji, smart quotes from the LLM, etc.). Map the common ones to
+// safe equivalents and strip anything else so the PDF never fails to render.
+function sanitize(input: string): string {
+  if (!input) return "";
+  return input
+    .replace(/[\u2264]/g, "<=").replace(/[\u2265]/g, ">=")
+    .replace(/[\u2192\u2794\u27a4]/g, "->").replace(/[\u2190]/g, "<-")
+    .replace(/[\u00d7]/g, "x").replace(/[\u2022\u25cf\u25aa]/g, "-")
+    .replace(/[\u2018\u2019\u201b]/g, "'").replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-").replace(/[\u2026]/g, "...")
+    .replace(/[\u00a0]/g, " ").replace(/[\u2122]/g, "(TM)").replace(/[\u00ae]/g, "(R)")
+    // strip any remaining non-Latin1 characters
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "");
+}
+
 function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
-  const words = (text || "").replace(/\s+/g, " ").trim().split(" ");
+  const words = sanitize(text || "").replace(/\s+/g, " ").trim().split(" ");
   const lines: string[] = [];
   let line = "";
   for (const w of words) {
