@@ -614,3 +614,26 @@ Per GA4 expert instruction, removed the @next/third-parties GA4 tag (G-3D0H9F3QB
 - Funnel events re-wired to GTM's dataLayer (lib/gtm.ts gtmEvent): audit_start (AuditApp) and generate_lead (LeadGate) now push { event, ... } to dataLayer.
 
 In GTM: create Custom Event triggers on "audit_start" and "generate_lead", attach GA4 event tags, and configure GA4 inside GTM (the G-... measurement ID now lives in a GTM tag, not in the app). Mark generate_lead as a Key Event/conversion in GA4.
+
+---
+
+## Update 38 — Public page redesign: hero copy, mobile nav, SEO content section, dropdown UX
+
+1. Hero H1 -> "Free SEO & GEO Audit with RankTomorrow" + provided subtext; removed the "+ Simple, Affordable..." line and the "Enter a URL..." helper line.
+2. Footer text -> "RankTomorrow, SEO & AI Visibility Audit Tool by Welcome Tomorrow." and REMOVED the divider line (border-t) above it.
+3. Dropdowns (country/language) now guaranteed-opaque (inline #0b100e bg + ring/shadow) instead of see-through.
+4. New mobile-friendly Nav (components/Nav.tsx): desktop inline links; on mobile a 3-line hamburger on the right that expands a solid menu panel.
+5. New SEO/GEO content section (components/SeoContent.tsx), public page only, WT dark design:
+   - How it works: 4 numbered step cards (responsive 1/2/4 cols).
+   - FAQ: 6-question accordion, answers in one paragraph each, NO em-dashes, answers live in the DOM for SEO + FAQPage JSON-LD structured data.
+   - Closing CTA: "Move beyond one-off audits" + 50-page / Cloudflare note + "Talk with one of our experts" -> Ochuko's booking calendar.
+6. Fully responsive; internal /seo view skips the marketing content.
+
+PENDING (needs user): favicon + thumbnail images — cannot pull from Google Drive (no Drive access + sandbox blocks drive.google.com). User must upload both image files to the chat; then wire them into layout icons + OG.
+
+---
+
+## Update 39 — Favicon + OG thumbnail wired to provided images
+
+Favicon -> https://i.imgur.com/pxoBmhP.png ; OG/Twitter thumbnail -> https://i.imgur.com/MYIJrl7.jpeg (referenced directly in metadata icons + openGraph/twitter images; no download needed since these are URL references).
+CAVEAT for user: hotlinking imgur is fine short-term but not ideal for a production site (imgur can rate-limit/remove). Recommended: upload both images into the repo (public/) later so they're served from your own domain — upload them to chat and I'll bundle them.

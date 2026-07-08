@@ -150,10 +150,11 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
       {/* Heading — white, no underline (dark canvas) */}
       <div className="text-center">
         <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-paper sm:text-6xl">
-          SEO Audit &amp; AI Visibility Tool
+          Free SEO &amp; GEO Audit with RankTomorrow
         </h1>
         <p className="mt-5 text-lg font-medium text-muted">
-          + Simple, Affordable SEO / GEO Toolset
+          Analyze your website&apos;s readiness for AI search engines. Get instant insights on how well
+          your content is optimized for generative AI platforms.
         </p>
       </div>
 
@@ -191,9 +192,6 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
             </div>
           </div>
 
-          <p className="mt-5 text-center text-sm text-muted">
-            Enter a URL and get a free website analysis — SEO, GEO &amp; AI visibility.
-          </p>
           {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
         </div>
       ) : (

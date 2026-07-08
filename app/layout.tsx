@@ -7,7 +7,9 @@ const GTM_ID = "GTM-PVGW8KF";
 
 const SITE = "https://tools.welcometomorrow.io";
 const PATH = "/ranktomorrow";
-const LOGO = `${PATH}/welcome-tomorrow-logo.png`;
+// Brand assets provided by the team (hosted on imgur).
+const FAVICON = "https://i.imgur.com/pxoBmhP.png";
+const THUMB = "https://i.imgur.com/MYIJrl7.jpeg";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -17,9 +19,9 @@ export const metadata: Metadata = {
   applicationName: "RankTomorrow",
   alternates: { canonical: `${SITE}${PATH}` },
   icons: {
-    icon: [{ url: LOGO }],
-    shortcut: [{ url: LOGO }],
-    apple: [{ url: LOGO }],
+    icon: [{ url: FAVICON }],
+    shortcut: [{ url: FAVICON }],
+    apple: [{ url: FAVICON }],
   },
   openGraph: {
     title: "RankTomorrow — SEO & AI Visibility Audit Tool",
@@ -28,13 +30,13 @@ export const metadata: Metadata = {
     url: `${SITE}${PATH}`,
     siteName: "RankTomorrow by Welcome Tomorrow",
     type: "website",
-    images: [{ url: LOGO, width: 1200, height: 630, alt: "RankTomorrow by Welcome Tomorrow" }],
+    images: [{ url: THUMB, width: 1200, height: 630, alt: "RankTomorrow by Welcome Tomorrow" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "RankTomorrow — SEO & AI Visibility Audit Tool",
     description: "Grade your site's SEO and AI visibility in minutes.",
-    images: [LOGO],
+    images: [THUMB],
   },
   robots: { index: true, follow: true },
 };

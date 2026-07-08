@@ -59,7 +59,10 @@ export function SearchableSelect({
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-glassBorder bg-[#0f1512] shadow-card">
+        <div
+          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-glassBorder shadow-2xl ring-1 ring-black/40"
+          style={{ backgroundColor: "#0b100e" }}
+        >
           {searchable && (
             <div className="border-b border-white/10 p-2">
               <input
