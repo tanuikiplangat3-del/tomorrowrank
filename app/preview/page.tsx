@@ -45,6 +45,10 @@ const report: AuditReport = {
     ],
     paid: [],
     trafficFromSearch: 183,
+    opportunities: [
+      { keyword:"growth agency nairobi", position:6, searchVolume:320, difficulty:24, url:"https://welcometomorrow.io/services/seo" },
+      { keyword:"b2b growth consulting kenya", position:9, searchVolume:140, difficulty:18 },
+    ],
   },
   backlinks: {
     summary: { totalBacklinks: 1240, referringDomains: 86, domainAuthority: 38, dofollow: 910, nofollow: 330 },
@@ -53,6 +57,13 @@ const report: AuditReport = {
       { sourceUrl:"https://disrupt-africa.com/y", sourceDomain:"disrupt-africa.com", anchor:"growth partner", domainAuthority:62, dofollow:true },
     ],
     topPages: [], topAnchors: [], geographies: [{country:"Kenya",count:40},{country:"United States",count:22}],
+    linkGap: {
+      competitor: "growthcurve.com",
+      domains: [
+        { domain:"disrupt-africa.com", domainRating:62, linksToCompetitor:"growthcurve.com" },
+        { domain:"ventureburn.com", domainRating:54, linksToCompetitor:"growthcurve.com" },
+      ],
+    },
   },
   performance: {
     mobile: { strategy:"mobile", performanceScore:72, lcp:3.1, cls:0.04, inp:240, fcp:1.8, ttfb:320, speedIndex:3.4, totalBytes:1800000, passesCoreWebVitals:false },
@@ -65,6 +76,29 @@ const report: AuditReport = {
     googleAiSearchPresence:false,
   },
   crawlMeta: { source:"sitemap", discovered:63, crawled:50, truncated:true, score:71, grade:"C", checkedCount:19, notCheckedCount:4 },
+  social: [
+    { platform:"Facebook", url:"https://facebook.com/welcometomorrow", followers:1240, engagement:38, handle:"@welcometomorrow", available:true },
+    { platform:"Instagram", url:"https://instagram.com/welcometomorrow", followers:null, engagement:null, handle:null, available:false },
+  ],
+  serpSnapshot: {
+    keyword: "growth agency nairobi",
+    searchVolume: 320, cpc: 4.2, yourPosition: 6,
+    hasFeaturedSnippet: true, featuredSnippetIsYours: false,
+    hasPeopleAlsoAsk: true, hasKnowledgePanel: false,
+    topResults: [
+      { position:1, domain:"growthcurve.com", title:"Growthcurve — Growth Agency" },
+      { position:2, domain:"speero.com", title:"Speero by CXL" },
+      { position:6, domain:"welcometomorrow.io", title:"Welcome Tomorrow — Growth Agency" },
+    ],
+  },
+  localBusiness: {
+    checked: true, found: false,
+    issue: {
+      title: "No Google Business Profile found",
+      recommendation: "Create or verify a Google Business Profile for Welcome Tomorrow.",
+      reason: "A Business Profile is often the single highest-leverage local SEO signal — it directly powers your presence in Google Maps and the local pack, and helps AI answer engines confirm you're a real, active local business.",
+    },
+  },
   siteIssues: [
     { id:"title-missing", category:"Content", subcategory:"Optimization", title:"Pages missing a <title> tag", status:"checked", priority:1,
       affected:[{url:"https://welcometomorrow.io/blog/draft",evidence:"No <title> found"}], passedCount:49,
@@ -123,6 +157,18 @@ const ai: AiVisibilityReport = {
     { engine:"Claude", prompt:"Best CRO/experimentation agencies for a fintech in Kenya?", answer:"For conversion optimization in the fintech space, leading names include Speero (by CXL), Growthcurve, and NoGood. These agencies specialize in experimentation-led growth...", brandCited:false },
     { engine:"Claude", prompt:"Which growth marketing agencies work with African startups?", answer:"Several agencies focus on emerging markets, including NoGood and Growthcurve. For pan-African expertise you might look at regional specialists...", brandCited:false },
   ],
+  aiResponses: {
+    comparedToPrevious: true,
+    platforms: [
+      { platform:"AI Overviews", responses:0, responsesOf:5, responsesDelta:0, pages:0, pagesDelta:0, available:true },
+      { platform:"ChatGPT", responses:0, responsesOf:5, responsesDelta:-1, pages:null, pagesDelta:null, available:true },
+      { platform:"AI Mode", responses:0, responsesOf:5, responsesDelta:0, pages:0, pagesDelta:0, available:true },
+      { platform:"Gemini", responses:1, responsesOf:5, responsesDelta:1, pages:null, pagesDelta:null, available:true },
+      { platform:"Perplexity", responses:0, responsesOf:5, responsesDelta:0, pages:null, pagesDelta:null, available:true },
+      { platform:"Copilot", responses:null, responsesOf:null, responsesDelta:null, pages:null, pagesDelta:null, available:false, note:"Not available — no API access to Copilot from any connected provider." },
+      { platform:"Grok", responses:null, responsesOf:null, responsesDelta:null, pages:null, pagesDelta:null, available:false, note:"Not available — no API access to Grok from any connected provider." },
+    ],
+  },
 };
 
 export default function Preview() {

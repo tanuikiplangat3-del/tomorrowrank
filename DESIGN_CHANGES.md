@@ -734,3 +734,13 @@ Cleanup pass — these two were approved back when ScrapingBee was scoped, but t
    - Wired into both the homepage fetch (`lib/seo/fetcher.ts`) and the multi-page crawler (`lib/crawl/crawler.ts`) — added `CoreFieldOverrides` support to `analyzePage()` in `lib/crawl/analyzer.ts` so the more reliable value wins over the regex match whenever it's available.
 2. **ScrapingBee's Google Search API as a second SERP source.** The SERP Snapshot card (Phase 3) now falls back to ScrapingBee (`GET /api/v1/store/google`, confirmed endpoint) if DataForSEO's SERP call fails or returns zero organic results, instead of the card just disappearing. Honest limitation: ScrapingBee's schema gives real organic positions and People Also Ask, but featured-snippet/knowledge-panel detection isn't a confirmed field on that endpoint, so those two stay `false` on the fallback path rather than guessed — DataForSEO remains the only source for those two signals.
 3. New shared helper `lib/providers/scrapingbee-extras.ts: CORE_FIELDS_EXTRACT_RULES` / `parseCoreFieldsResponse()` — used by both fetcher.ts and crawler.ts so the extraction-rule definition and combined-response parsing only exist in one place.
+
+---
+
+## Update 49 — Build fix: app/preview/page.tsx wasn't updated for the new AuditReport fields
+
+Real build failure on CloudShell caught this: `app/preview/page.tsx` (an internal design-QA route with a hardcoded mock report, used to preview the Report component's look without running a real audit) was never part of the zip snapshots delivered across Updates 41–48, so it silently drifted out of sync while `AuditReport`/`AiVisibilityReport` grew new required fields. `npm run build` failed on `Property 'opportunities' is missing`.
+
+Fixed by adding the new required fields to the mock report/AI-visibility objects: `keywords.opportunities`, `backlinks.linkGap`, `social`, plus sample `serpSnapshot`, `localBusiness`, and `aiResponses` data so `/preview` actually demonstrates the new sections instead of just satisfying the type checker.
+
+While fixing this, pulled the actual live GitHub repo directly (rather than continuing from the local zip-based working copy) and found two other files that had the same drift risk but happened not to break the build: `lib/store/attio.ts` (dead code, confirmed unimported anywhere — a leftover from the Attio removal, harmless but could be deleted) and `components/GridBackground.tsx` (unused component). Full `tsc --noEmit` and `npm run build` now pass clean against the real repo contents, including `/preview` (13 routes build successfully, up from 12).
