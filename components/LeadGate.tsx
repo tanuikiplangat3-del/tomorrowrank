@@ -7,6 +7,7 @@
 // has to match the audited domain.
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiPath } from "./Gate";
 import { siteHost } from "@/lib/leadmatch";
 import { gtmEvent } from "@/lib/gtm";
@@ -33,6 +34,11 @@ export function LeadGate({
   const [newsletter, setNewsletter] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Render via a portal to <body> so the gate escapes any ancestor stacking
+  // context (blurred cards, transformed sections) and always sits on top.
+  useEffect(() => setMounted(true), []);
 
   // Lock background scroll while the gate is open — the screen stays put.
   useEffect(() => {
@@ -72,9 +78,12 @@ export function LeadGate({
   const field =
     "w-full rounded-lg border border-glassBorder bg-white/[0.04] px-3 py-2.5 text-sm text-paper placeholder:text-muted outline-none focus:border-wtgreen";
 
-  return (
-    // Fixed full-screen overlay; blocks everything behind it (background scroll locked).
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm">
+  if (!mounted) return null;
+
+  return createPortal(
+    // Fixed full-screen overlay portaled to <body>; sits above all content, dims
+    // and blurs the background (which stays visible but out of focus behind it).
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-lg">
       <div className="w-full max-w-md rounded-2xl border border-glassBorder bg-[#0c0f0d] p-6 shadow-2xl sm:p-8">
         <h2 className="font-display text-2xl font-extrabold text-paper">Get your free SEO &amp; AI visibility audit</h2>
         <p className="mt-2 text-sm text-muted">
@@ -120,7 +129,8 @@ export function LeadGate({
           <p className="text-center text-[11px] text-muted">Powered by Welcome Tomorrow</p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

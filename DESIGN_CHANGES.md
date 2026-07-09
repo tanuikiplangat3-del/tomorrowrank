@@ -658,3 +658,9 @@ CAVEAT for user: hotlinking imgur is fine short-term but not ideal for a product
    - REMOVED the domain-must-match-audited-site rule (client check, mismatch CTAs, and the server 422). Any company email is now accepted; removed the emailMatchesSite import from the route.
    - Modal footer now just "Powered by Welcome Tomorrow" (domain removed).
 3. Footer: replaced the slim credit line with the FULL welcometomorrow.io footer (components/Footer.tsx) — brand blurb + office locations, social icons (IG/FB/LinkedIn/TikTok/Newsletter), and Company / Services / Expertise link columns mirrored from the live site, plus the legal bar. Under Company, added "SEO & GEO Audit Tool" right below Contact Us. Outfit font inherited.
+
+---
+
+## Update 42 — Lead gate always on top (portal) + blurred backdrop
+
+The gate was rendered inside the app tree, so newer sections (SeoContent cards with backdrop-blur, footer) created stacking contexts that painted over it. Fix: LeadGate now renders through a React portal to document.body (via createPortal, guarded by a mounted flag), with z-index maxed and backdrop-blur-lg over bg-black/80. Result: the modal always sits on top; the page behind it is dimmed + blurred (translucent, still faintly visible) and non-interactive; scroll stays locked.
