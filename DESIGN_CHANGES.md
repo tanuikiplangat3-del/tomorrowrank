@@ -664,3 +664,9 @@ CAVEAT for user: hotlinking imgur is fine short-term but not ideal for a product
 ## Update 42 — Lead gate always on top (portal) + blurred backdrop
 
 The gate was rendered inside the app tree, so newer sections (SeoContent cards with backdrop-blur, footer) created stacking contexts that painted over it. Fix: LeadGate now renders through a React portal to document.body (via createPortal, guarded by a mounted flag), with z-index maxed and backdrop-blur-lg over bg-black/80. Result: the modal always sits on top; the page behind it is dimmed + blurred (translucent, still faintly visible) and non-interactive; scroll stays locked.
+
+---
+
+## Update 43 — Own-domain favicon + OG/thumbnail (dropped imgur hotlink)
+
+Replaced the temporary imgur-hosted favicon/thumbnail with the new WT logo mark, uploaded directly and bundled into the repo. Added `public/wt-logo-mark.png` (1024×1024, resized from the source file). `app/layout.tsx` now points `icon` / `shortcut` / `apple` icons and the OG + Twitter card image at `/ranktomorrow/wt-logo-mark.png` (served from our own domain, matching the existing pattern used for `welcome-tomorrow-logo.png`) instead of `i.imgur.com`. OG image width/height corrected to 1024×1024 to match the actual (square) asset so platforms don't stretch it. Same image now used for both the favicon and the social thumbnail, as requested. Nothing else changed.
