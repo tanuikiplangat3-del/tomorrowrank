@@ -2,6 +2,7 @@
 import { AuditApp } from "@/components/AuditApp";
 import { Nav } from "@/components/Nav";
 import { SeoContent } from "@/components/SeoContent";
+import { Footer } from "@/components/Footer";
 
 export function Landing({ internal = false }: { internal?: boolean }) {
   return (
@@ -21,13 +22,7 @@ export function Landing({ internal = false }: { internal?: boolean }) {
       {/* SEO / GEO marketing content (public page only) */}
       {!internal && <SeoContent />}
 
-      <footer className="relative z-10 py-8 text-center text-sm text-muted">
-        RankTomorrow, SEO &amp; AI Visibility Audit Tool by{" "}
-        <a href="https://welcometomorrow.io" className="font-semibold text-wtgreen hover:underline">
-          Welcome Tomorrow
-        </a>
-        .
-      </footer>
+      <Footer />
     </main>
   );
 }

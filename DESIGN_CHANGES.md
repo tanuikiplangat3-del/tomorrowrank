@@ -646,3 +646,15 @@ CAVEAT for user: hotlinking imgur is fine short-term but not ideal for a product
 2. LeadGate mismatch: "Edit email" now calls editEmail() -> dismisses both mismatch CTAs, KEEPS all entered details, and focuses+selects the email field so the user edits and hits Run (no restart). Fields were already controlled/retained; added the focus + clearer handler.
 3. Hero H1 -> "Free, Simple SEO & GEO Audit Tool" (removed RankTomorrow from the headline).
 4. Added "Why RankTomorrow?" content block just before the FAQ (4 paragraphs, provided copy, no em-dashes, tidied "it`s"->its and on page->on-page).
+
+---
+
+## Update 41 — Design: dropdown fix, lead-gate UX, full WT footer
+
+1. Country/Language dropdown: rendered IN-FLOW now (not an absolute overlay) so it (a) pushes content below down instead of covering it, (b) scrolls + selects reliably (the overlay was being clipped/stacked over), and (c) has a solid #0b100e background.
+2. Lead gate:
+   - Background scroll is now LOCKED while the gate is open (body overflow hidden) so the screen stays put.
+   - Email placeholder simplified to "Company email" (removed the "(no Gmail/Yahoo)" hint) while free inboxes are still rejected behind the scenes (client + server).
+   - REMOVED the domain-must-match-audited-site rule (client check, mismatch CTAs, and the server 422). Any company email is now accepted; removed the emailMatchesSite import from the route.
+   - Modal footer now just "Powered by Welcome Tomorrow" (domain removed).
+3. Footer: replaced the slim credit line with the FULL welcometomorrow.io footer (components/Footer.tsx) — brand blurb + office locations, social icons (IG/FB/LinkedIn/TikTok/Newsletter), and Company / Services / Expertise link columns mirrored from the live site, plus the legal bar. Under Company, added "SEO & GEO Audit Tool" right below Contact Us. Outfit font inherited.

@@ -2,12 +2,21 @@
 // components/LeadGate.tsx
 // Non-dismissable gate shown when the user clicks Audit. The audit only starts
 // after a valid submission (enforced server-side too). No close/X, no
-// outside-click dismiss, no ESC — it resolves only on success.
+// outside-click dismiss, no ESC — it resolves only on success. Any COMPANY email
+// is accepted (free inboxes like Gmail/Yahoo are rejected); the email no longer
+// has to match the audited domain.
 
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiPath } from "./Gate";
-import { emailMatchesSite, siteHost } from "@/lib/leadmatch";
+import { siteHost } from "@/lib/leadmatch";
 import { gtmEvent } from "@/lib/gtm";
+
+// Obvious free/public inboxes — quick client-side feedback (server is authoritative).
+const FREE = new Set([
+  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "ymail.com", "hotmail.com",
+  "outlook.com", "live.com", "msn.com", "icloud.com", "me.com", "aol.com", "proton.me",
+  "protonmail.com", "gmx.com", "mail.com", "zoho.com", "yandex.com",
+]);
 
 export function LeadGate({
   url,
@@ -23,27 +32,26 @@ export function LeadGate({
   const [agreed, setAgreed] = useState(false);
   const [newsletter, setNewsletter] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mismatch, setMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const emailRef = useRef<HTMLInputElement>(null);
 
-  function editEmail() {
-    // Dismiss both mismatch CTAs, keep everything the user already typed, and
-    // drop the cursor into the email field so they can fix it and hit Run.
-    setMismatch(false);
-    setError(null);
-    setTimeout(() => { emailRef.current?.focus(); emailRef.current?.select(); }, 0);
-  }
+  // Lock background scroll while the gate is open — the screen stays put.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   async function submit() {
     setError(null);
-    setMismatch(false);
     if (!firstName.trim() || !lastName.trim()) { setError("Please enter your first and last name."); return; }
     if (!email.trim()) { setError("Please enter your company email."); return; }
     if (!agreed) { setError("Please tick the box to receive your audit by email."); return; }
-    // The company email must belong to the domain being audited. If it doesn't,
-    // we don't error — we invite them to contact Welcome Tomorrow to verify.
-    if (!emailMatchesSite(email, url)) { setMismatch(true); return; }
+    const domain = email.split("@")[1]?.toLowerCase().trim();
+    if (!domain || !domain.includes(".")) { setError("Please enter a valid company email."); return; }
+    if (FREE.has(domain)) {
+      setError("Please use your company email — free inboxes (Gmail, Yahoo, Outlook, etc.) aren't accepted.");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch(apiPath("/api/lead"), {
@@ -52,7 +60,6 @@ export function LeadGate({
         body: JSON.stringify({ firstName, lastName, email, position, agreed, newsletter, url }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 422 || data.error === "MISMATCH") { setMismatch(true); setSubmitting(false); return; }
       if (!res.ok) { setError(data.error || "Could not verify your details."); setSubmitting(false); return; }
       gtmEvent("generate_lead", { site: siteHost(url), newsletter });
       onVerified(data.leadId, email);
@@ -62,16 +69,12 @@ export function LeadGate({
     }
   }
 
-  const contactHref =
-    `mailto:seo@welcometomorrow.io?subject=${encodeURIComponent(`Audit verification for ${siteHost(url) ?? url}`)}` +
-    `&body=${encodeURIComponent(`Hi Welcome Tomorrow team,\n\nI'd like to run an SEO & AI-visibility audit for ${siteHost(url) ?? url}, but my email domain doesn't match the site. Could you help verify me?\n\nName: ${firstName} ${lastName}\nEmail: ${email}\nSite: ${url}\n\nThanks!`)}`;
-
   const field =
     "w-full rounded-lg border border-glassBorder bg-white/[0.04] px-3 py-2.5 text-sm text-paper placeholder:text-muted outline-none focus:border-wtgreen";
 
   return (
-    // Fixed full-screen overlay; blocks everything behind it.
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+    // Fixed full-screen overlay; blocks everything behind it (background scroll locked).
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl border border-glassBorder bg-[#0c0f0d] p-6 shadow-2xl sm:p-8">
         <h2 className="font-display text-2xl font-extrabold text-paper">Get your free SEO &amp; AI visibility audit</h2>
         <p className="mt-2 text-sm text-muted">
@@ -84,7 +87,7 @@ export function LeadGate({
             <input className={field} placeholder="First name" value={firstName} onChange={(e) => setFirst(e.target.value)} />
             <input className={field} placeholder="Last name" value={lastName} onChange={(e) => setLast(e.target.value)} />
           </div>
-          <input ref={emailRef} className={field} type="email" placeholder="Company email (no Gmail/Yahoo)" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className={field} type="email" placeholder="Company email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input className={field} placeholder="Position" value={position} onChange={(e) => setPosition(e.target.value)} />
 
           <label className="flex cursor-pointer items-start gap-2.5 pt-1">
@@ -106,41 +109,15 @@ export function LeadGate({
 
           {error && <p className="text-sm font-medium text-bad">{error}</p>}
 
-          {mismatch ? (
-            <div className="mt-1 space-y-2.5 rounded-lg border border-wtgreen/40 bg-wtgreen/10 p-3.5">
-              <p className="text-sm font-semibold text-paper">
-                That email doesn&apos;t match {siteHost(url) ?? "the site"}.
-              </p>
-              <p className="text-xs leading-relaxed text-muted">
-                We send reports to a company email on the same domain as the site being audited. If you
-                work with {siteHost(url) ?? "this site"} but use a different email, contact us to verify.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <a
-                  href={contactHref}
-                  className="flex-1 rounded-md bg-wtgreen px-4 py-2 text-center text-sm font-semibold text-paper transition hover:bg-wtgreenDeep"
-                >
-                  Contact to verify →
-                </a>
-                <button
-                  type="button"
-                  onClick={editEmail}
-                  className="flex-1 rounded-md border border-glassBorder px-4 py-2 text-center text-sm font-semibold text-paper transition hover:border-wtgreen"
-                >
-                  Edit email
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={submitting}
-              className="mt-1 w-full rounded-lg bg-wtgreen px-6 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep disabled:opacity-60"
-            >
-              {submitting ? "Verifying…" : "Run my audit →"}
-            </button>
-          )}
-          <p className="text-center text-[11px] text-muted">Powered by Welcome Tomorrow · welcometomorrow.io</p>
+          <button
+            onClick={submit}
+            disabled={submitting}
+            className="mt-1 w-full rounded-lg bg-wtgreen px-6 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep disabled:opacity-60"
+          >
+            {submitting ? "Verifying…" : "Run my audit →"}
+          </button>
+
+          <p className="text-center text-[11px] text-muted">Powered by Welcome Tomorrow</p>
         </div>
       </div>
     </div>

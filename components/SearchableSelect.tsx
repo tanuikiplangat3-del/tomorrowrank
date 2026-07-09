@@ -57,10 +57,10 @@ export function SearchableSelect({
         <span className={`ml-2 shrink-0 text-muted transition ${open ? "rotate-180" : ""}`}>▾</span>
       </button>
 
-      {/* Dropdown panel */}
+      {/* Dropdown panel — in-flow (pushes content below down; never overlays) */}
       {open && (
         <div
-          className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-glassBorder shadow-2xl ring-1 ring-black/40"
+          className="relative z-10 mt-1 w-full overflow-hidden rounded-lg border border-glassBorder shadow-xl"
           style={{ backgroundColor: "#0b100e" }}
         >
           {searchable && (
