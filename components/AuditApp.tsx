@@ -5,7 +5,7 @@ import type { AuditJob } from "@/types/audit";
 import { COUNTRIES, LANGUAGES } from "@/lib/locations";
 import { SearchableSelect } from "./SearchableSelect";
 import { LeadGate } from "./LeadGate";
-import { apiPath } from "./Gate";
+import { apiPath, BASE_PATH } from "./Gate";
 import { Report } from "./Report";
 import { gtmEvent } from "@/lib/gtm";
 
@@ -32,9 +32,9 @@ async function readJson(res: Response): Promise<any> {
   }
 }
 
-export function AuditApp({ internal = false }: { internal?: boolean }) {
+export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boolean; initialUrl?: string }) {
   const [phase, setPhase] = useState<Phase>("input");
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl);
   const [country, setCountry] = useState("Kenya");
   const [language, setLanguage] = useState("English");
   const [keyword, setKeyword] = useState("");
@@ -52,12 +52,21 @@ export function AuditApp({ internal = false }: { internal?: boolean }) {
 
   // Persist the current job id in the URL (?job=…) so a page refresh — e.g. after
   // a dropped connection — restores the SAME dashboard from storage instead of
-  // wiping it and forcing a re-audit.
+  // wiping it and forcing a re-audit. While we're at it, swap the bare tool
+  // root for a clean, shareable path with the audited site in it, e.g.
+  // /ranktomorrow/welcometomorrow.io (or /ranktomorrow/seo/welcometomorrow.io
+  // for the internal tool) instead of a long job/lead id string.
   const setJobParam = (jobId: string | null, lead?: string | null) => {
     if (typeof window === "undefined") return;
     const u = new URL(window.location.href);
     if (jobId) u.searchParams.set("job", jobId); else u.searchParams.delete("job");
     if (lead) u.searchParams.set("lead", lead); else if (lead === null) u.searchParams.delete("lead");
+    if (jobId) {
+      const slug = prettyHost(url);
+      if (slug && /\./.test(slug)) {
+        u.pathname = `${BASE_PATH}${internal ? "/seo" : ""}/${encodeURIComponent(slug)}`;
+      }
+    }
     window.history.replaceState(null, "", u.toString());
   };
 
@@ -233,8 +242,10 @@ function Processing({ job, url, country, language }: {
         )}
       </div>
       <p className="mt-6 max-w-md text-muted">
-        Hang tight — we&apos;re crawling and building insights for{" "}
-        <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}.</span>
+        Wait as your site is being audited — auditing{" "}
+        <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}</span>{" "}
+        can take up to 2–5 minutes for maximum output and correct results. Please don&apos;t cancel or close this
+        tab midway.
       </p>
     </div>
   );
