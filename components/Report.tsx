@@ -1,7 +1,7 @@
 "use client";
 // components/Report.tsx
 import type { AuditReport, AiVisibilityReport, CheckResult, SocialProfile } from "@/types/audit";
-import { GradeGauge, ScoreRing, CategoryRadar, PriorityBadge, CategoryTag } from "./Primitives";
+import { GradeGauge, ScoreRing, PriorityBadge, CategoryTag } from "./Primitives";
 import { AiVisibilitySection } from "./AiVisibility";
 import { SiteIssues } from "./SiteIssues";
 import { GateContext, CtaButton } from "./Gate";
@@ -106,12 +106,6 @@ export function Report({
           <CtaButton label="Talk to Expert" source="hero" />
         </div>
       </header>
-
-      {/* Category breakdown radar — supplementary detail */}
-      <section className={`mt-6 ${CARD}`}>
-        <h2 className="font-display text-xl font-bold text-paper">Category Breakdown</h2>
-        <CategoryRadar categories={report.categories} />
-      </section>
 
       {/* Issues found */}
       <section className={`mt-6 ${CARD}`}>

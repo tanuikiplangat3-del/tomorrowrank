@@ -111,12 +111,6 @@ function AiResponsesDashboard({ data, bare = false }: { data: AiVisibilityReport
           ))}
         </tbody>
       </table>
-      {rest.some((p) => !p.available) && (
-        <p className="mt-3 text-xs text-muted">
-          Copilot and Grok aren&apos;t shown with real numbers — no API access to either platform is currently
-          connected, so we don&apos;t fabricate a count for them.
-        </p>
-      )}
     </div>
   );
 }
@@ -139,9 +133,6 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
     <section className="mt-10">
       <div className="mb-5 flex items-baseline gap-3">
         <h2 className="font-display text-2xl font-extrabold text-paper">AI Visibility</h2>
-        <span className="text-sm font-medium text-muted">
-          GEO / Generative Engine Optimization · {data.modelsQueried.join(" · ") || "Claude"}
-        </span>
       </div>
 
       {/* Row 1: Insights + AI Responses (replaces the old Share of Voice vs Sentiment bubble chart) */}

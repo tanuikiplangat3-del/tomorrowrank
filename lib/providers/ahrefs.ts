@@ -36,9 +36,15 @@ async function get<T = any>(path: string, params: Record<string, string>): Promi
   return (await res.json()) as T;
 }
 
-// today's date in YYYY-MM-DD, used by endpoints that need a `date`
+// Ahrefs' metrics index has a processing lag — the exact current calendar date
+// is NOT yet available and the API rejects it outright with "bad date"
+// (confirmed via a live test call: today() failed, 1 day back succeeded).
+// A 2-day safety margin avoids ever hitting that edge, at the cost of the
+// data being up to 2 days old, which is immaterial for an SEO audit.
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
+  return d.toISOString().slice(0, 10);
 }
 
 // ---------- DOMAIN RATING (authority) ----------

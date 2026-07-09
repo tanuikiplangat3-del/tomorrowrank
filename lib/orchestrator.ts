@@ -19,7 +19,8 @@ import type {
   TechnicalCrossCheck,
 } from "@/types/audit";
 import { updateJob } from "@/lib/store/jobs";
-import { fetchPageSignals, scrapingBeeConfigured } from "@/lib/seo/fetcher";
+import { fetchPageSignals, scrapingBeeConfigured, type PageSignals } from "@/lib/seo/fetcher";
+import { claudeJSON, MODELS } from "@/lib/providers/llm";
 import { captureScreenshot, scrapeSocialProfile, scrapingBeeGoogleSearch } from "@/lib/providers/scrapingbee-extras";
 import {
   dataForSeoConfigured,
@@ -54,6 +55,7 @@ import {
 import { runAiVisibility } from "@/lib/ai-visibility/engine";
 import { crawlSite } from "@/lib/crawl/crawler";
 import { buildSiteIssues, scoreFromIssues } from "@/lib/crawl/issues";
+import { analyzePage } from "@/lib/crawl/analyzer";
 import { findSiteAuditProject, ahrefsSiteAuditIssues } from "@/lib/providers/ahrefs-siteaudit";
 import { resolveLocation, resolveLanguage } from "@/lib/locations";
 
@@ -213,7 +215,9 @@ export async function runAudit(job: AuditJob): Promise<void> {
     await set("Analysing Generative Engine Optimization (GEO)", 60);
     const probeQueries = organic.slice(0, 3).map((k) => k.keyword);
     if (probeQueries.length === 0 && targetKeyword) probeQueries.push(targetKeyword);
-    if (probeQueries.length === 0) probeQueries.push(`best ${domain.split(".")[0]} services ${country}`);
+    if (probeQueries.length === 0) {
+      probeQueries.push(await guessNicheQuery(signals, domain, country));
+    }
 
     // Pick the keyword for the real Google SERP snapshot: the user's target
     // keyword first, else the top keyword opportunity, else the top organic
@@ -513,6 +517,29 @@ export async function runAudit(job: AuditJob): Promise<void> {
       } catch { /* crawl skipped; core report still completes */ }
     }
 
+    // GUARANTEE: the Technical SEO Audit / drill-down section must never
+    // silently disappear just because the full multi-page crawl was skipped
+    // (budget too tight) or failed (network/proxy error) — both are caught
+    // above and previously left `siteIssues` undefined with no fallback,
+    // which meant the crawl-based section could vanish even while the
+    // single-page "Issues Found" checks above it still showed failures.
+    // Falling back to a single-page analysis of the homepage (data we already
+    // have in hand — `signals` — no extra fetch) means there's always at
+    // least one real, verifiable page in the drill-down.
+    if (!siteIssues) {
+      try {
+        const homePage = analyzePage(signals.finalUrl, 200, signals.html);
+        siteIssues = buildSiteIssues([homePage]);
+        const sc = scoreFromIssues(siteIssues);
+        siteScore = { score: sc.score, grade: sc.grade };
+        crawlMeta = {
+          source: "homepage-only", discovered: 1, crawled: 1,
+          truncated: true, score: sc.score, grade: sc.grade,
+          checkedCount: sc.checkedCount, notCheckedCount: sc.notCheckedCount,
+        };
+      } catch { /* even this failed — genuinely nothing to show, leave undefined */ }
+    }
+
     // Reconcile the headline with the crawl. The on-page `overall` reflects only
     // the main page; if a site-wide crawl produced a score, blend it in so the
     // headline can't say "perfect" while the site issues list is full of problems.
@@ -666,6 +693,36 @@ async function computeLinkGap(
     return { competitor: competitorDomain, domains: gap };
   } catch {
     return { competitor: competitorDomain, domains: [] };
+  }
+}
+
+// When a domain has no Ahrefs keyword history at all (new domain, or was
+// hitting the date bug fixed in Update 54) AND no target keyword was given,
+// the old fallback was a generic, unnatural template
+// ("best {domain-stem} services {country}") that real buyers never actually
+// search — e.g. "best kuda services Nigeria" instead of "best banking app in
+// Nigeria". This asks Claude to infer the actual category from the homepage
+// and produce ONE natural query real buyers would type. Best-effort: any
+// failure falls back to the old template rather than blocking the audit.
+async function guessNicheQuery(signals: PageSignals, domain: string, country: string): Promise<string> {
+  const fallback = `best ${domain.split(".")[0]} services ${country}`;
+  try {
+    const text = signals.html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 3000);
+    const result = await claudeJSON<{ query: string }>({
+      model: MODELS.fast,
+      system: "You identify what category of business a website is, then write ONE short, natural Google search query a real person in that market would type to find the best option in that category — not a template with the brand name jammed in.",
+      prompt: `Domain: ${domain}\nCountry: ${country}\nHomepage text: """${text}"""\n\nReturn JSON: {"query": "<a short, natural query like 'best banking app in Nigeria' or 'top project management software', appropriate to this business's actual category and country>"}`,
+      maxTokens: 150,
+      timeoutMs: 10_000,
+    });
+    return result.query?.trim() || fallback;
+  } catch {
+    return fallback;
   }
 }
 
