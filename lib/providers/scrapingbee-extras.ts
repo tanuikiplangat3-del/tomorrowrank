@@ -162,17 +162,21 @@ function toNumber(v: unknown): number | null {
   return null;
 }
 
-export async function scrapeSocialProfile(url: string): Promise<ScrapedSocialProfile> {
+export async function scrapeSocialProfile(url: string, opts: { allowStealth?: boolean } = {}): Promise<ScrapedSocialProfile> {
   const empty: ScrapedSocialProfile = { followers: null, engagement: null, handle: null, available: false };
   if (!scrapingBeeConfigured()) return empty;
   try {
     // Cheap attempt first (no stealth) — most public profile pages don't need it.
-    let data = await scrapeOnce(url, false, 20_000).catch(() => null);
+    let data = await scrapeOnce(url, false, 15_000).catch(() => null);
     // Escalate to stealth only if the cheap attempt failed outright or every
-    // field came back empty (a common sign of a bot-challenge page).
+    // field came back empty (a common sign of a bot-challenge page) — AND
+    // only when the caller has budget to spare for it. The public tool's
+    // 3-minute total budget can't absorb a 40s stealth retry per social
+    // profile on top of everything else it's doing, so it stays cheap-tier
+    // only; the internal tool's 30-minute budget can afford the escalation.
     const looksEmpty = (d: any) =>
       !d || (toNumber(d.followers) == null && toNumber(d.engagement) == null && !d.handle);
-    if (looksEmpty(data)) {
+    if (opts.allowStealth && looksEmpty(data)) {
       data = await scrapeOnce(url, true, 40_000).catch(() => null);
     }
     if (!data) return empty;

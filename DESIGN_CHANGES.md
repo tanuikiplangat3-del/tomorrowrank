@@ -744,3 +744,20 @@ Real build failure on CloudShell caught this: `app/preview/page.tsx` (an interna
 Fixed by adding the new required fields to the mock report/AI-visibility objects: `keywords.opportunities`, `backlinks.linkGap`, `social`, plus sample `serpSnapshot`, `localBusiness`, and `aiResponses` data so `/preview` actually demonstrates the new sections instead of just satisfying the type checker.
 
 While fixing this, pulled the actual live GitHub repo directly (rather than continuing from the local zip-based working copy) and found two other files that had the same drift risk but happened not to break the build: `lib/store/attio.ts` (dead code, confirmed unimported anywhere — a leftover from the Attio removal, harmless but could be deleted) and `components/GridBackground.tsx` (unused component). Full `tsc --noEmit` and `npm run build` now pass clean against the real repo contents, including `/preview` (13 routes build successfully, up from 12).
+
+---
+
+## Update 50 — Fix: public-tool audits on large/protected sites (e.g. betika.com) timing out with NO report, defeating the point of having ScrapingBee
+
+Real failure caught on a live test (betika.com + sportpesa.com as competitor, public tool): "The audit stopped responding." Root cause, found by walking the actual worst-case timing rather than guessing: Updates 45–48 added a genuine amount of new sequential/loosely-bounded work to the SAME 180-second public-tool budget without re-checking whether that budget could still realistically fit it all, especially for a large or protected site.
+
+Specifically:
+- **Ahrefs' default per-call timeout was 60 seconds** (`lib/providers/ahrefs.ts`) — with ~9 Ahrefs calls now running in one `Promise.allSettled`, a single slow/degraded Ahrefs endpoint that day could silently consume a THIRD of the entire public-tool budget, since `allSettled` waits for the slowest call before the audit can proceed. Reduced to 20s — Ahrefs normally responds in under 2s, so this only bites during genuine degradation, and now fails fast instead of stalling the whole audit.
+- **The link-gap lookup, the real-Google-Ads-volume lookup, and the ScrapingBee SERP fallback were all running one-after-another** (each with its own multi-second timeout) instead of in parallel with the GEO/SERP/Business Profile block they were added next to. Folded all of them into the same `Promise.all`, and added explicit tighter timeouts (12–15s) to each rather than relying on each provider's own generous internal default.
+- **Social profile scraping could take up to ~60s per platform** on the public tool (a 15s cheap attempt, then escalating to a 40s stealth retry) with no regard for how much of the 180s budget was already spent. The stealth escalation is now internal-tool only (30-minute budget can absorb it); the public tool stays on the cheap tier, capped at 15s per profile.
+- **Screenshot capture** timeout tightened for the public tool (25s → 15s; internal tool keeps 25s).
+- Added a budget guard so the ScrapingBee SERP fallback is skipped outright if less than 25s remains, rather than spending more time chasing a fallback when there's nothing left to spend.
+
+Net effect: worst-case time spent on everything BEFORE the crawl+AI-visibility stage on the public tool dropped from a scenario that could consume nearly the entire 180s budget down to roughly 100–120s worst case — leaving the crawl and AI visibility (the actual point of the tool, and where ScrapingBee's stealth crawling does its real work) a real, guaranteed chunk of time instead of the scraps left over after everything else.
+
+No scope was cut to make this fit — every feature from Updates 45–48 is still fully wired in; this was purely about not letting the new work starve the time the crawl needs, which is exactly the failure that was reported.

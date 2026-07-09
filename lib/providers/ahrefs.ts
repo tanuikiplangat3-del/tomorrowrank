@@ -22,7 +22,12 @@ async function get<T = any>(path: string, params: Record<string, string>): Promi
   const res = await fetch(`${BASE}${path}?${qs}`, {
     method: "GET",
     headers: authHeaders(),
-    signal: AbortSignal.timeout(60_000),
+    // Ahrefs normally responds in well under 2s. 20s (was 60s) is already a
+    // generous margin for a slow day — the old 60s ceiling meant a single
+    // degraded Ahrefs endpoint could silently eat a THIRD of the public
+    // tool's entire 180s budget, since Promise.allSettled waits for the
+    // slowest of the ~9 parallel Ahrefs calls before the audit can proceed.
+    signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
     const text = await res.text();

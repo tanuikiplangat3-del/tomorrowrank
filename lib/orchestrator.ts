@@ -117,9 +117,12 @@ export async function runAudit(job: AuditJob): Promise<void> {
     const [mobile, desktop, screenshot, socialResults] = await Promise.all([
       pageSpeed(signals.finalUrl, "mobile", psTimeout).catch(() => emptyPSI("mobile")),
       pageSpeed(signals.finalUrl, "desktop", psTimeout).catch(() => emptyPSI("desktop")),
-      captureScreenshot(signals.finalUrl, { protected: signals.protected }).catch(() => null),
+      captureScreenshot(signals.finalUrl, {
+        protected: signals.protected,
+        timeoutMs: job.input.internal ? 25_000 : 15_000,
+      }).catch(() => null),
       Promise.allSettled(
-        socialTargets.map(([, url]) => scrapeSocialProfile(url))
+        socialTargets.map(([, url]) => scrapeSocialProfile(url, { allowStealth: job.input.internal }))
       ),
     ]);
 
@@ -157,16 +160,16 @@ export async function runAudit(job: AuditJob): Promise<void> {
 
     // 3b. Link gap: sites linking to a competitor but not to us. Prefer a
     // user-supplied competitor URL; otherwise use the strongest auto-detected
-    // organic competitor (by shared keywords). Best-effort — an audit never
-    // fails because this couldn't be computed.
-    await set("Comparing your backlinks against a competitor", 48);
+    // organic competitor (by shared keywords). Kicked off here (not awaited
+    // yet) so it runs IN PARALLEL with the GEO/SERP/business block below
+    // instead of adding its own sequential delay first.
     const competitorDomain =
       manualCompetitorDomain ?? (autoCompetitors[0]?.competitor_domain as string | undefined) ?? null;
-    const linkGap = await computeLinkGap(domain, competitorDomain, refDoms, job.input.internal);
+    const linkGapPromise = computeLinkGap(domain, competitorDomain, refDoms, job.input.internal);
 
     // 4. GEO analysis (Claude + web-search citation probe) — run in parallel
-    // with the SERP snapshot and Business Profile lookup (both DataForSEO,
-    // both independent of GEO/Claude).
+    // with the SERP snapshot, real Google Ads volume, Business Profile
+    // lookup, and the link gap above. All independent of each other.
     await set("Analysing Generative Engine Optimization (GEO)", 60);
     const probeQueries = organic.slice(0, 3).map((k) => k.keyword);
     if (probeQueries.length === 0 && targetKeyword) probeQueries.push(targetKeyword);
@@ -190,14 +193,18 @@ export async function runAudit(job: AuditJob): Promise<void> {
 
     const dfsReady = dataForSeoConfigured() && !!loc.locationCode;
 
-    const [geo, serpRawDfs, businessRaw] = await Promise.all([
+    const [geo, serpRawDfs, businessRaw, adsVolume, linkGap] = await Promise.all([
       analyzeGeo(signals, domain, probeQueries),
       dfsReady
-        ? withTimeout(googleOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 20_000).catch(() => null)
+        ? withTimeout(googleOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
         : Promise.resolve(null),
       dfsReady
-        ? withTimeout(googleBusinessProfile(businessNameGuess, loc.locationCode!, lang.languageCode), 20_000).catch(() => null)
+        ? withTimeout(googleBusinessProfile(businessNameGuess, loc.locationCode!, lang.languageCode), 15_000).catch(() => null)
         : Promise.resolve(null),
+      dfsReady
+        ? withTimeout(googleAdsSearchVolume([serpKeyword], loc.locationCode!), 12_000).catch(() => [])
+        : Promise.resolve([]),
+      withTimeout(linkGapPromise, 15_000).catch(() => ({ competitor: competitorDomain, domains: [] })),
     ]);
 
     // Fallback: if DataForSEO's SERP call failed or found nothing at all
@@ -207,8 +214,11 @@ export async function runAudit(job: AuditJob): Promise<void> {
     // stays DataForSEO-only (not a confirmed field on ScrapingBee's schema —
     // see lib/providers/scrapingbee-extras.ts).
     let serpRaw = serpRawDfs;
-    if (!serpRaw || serpRaw.topResults.length === 0) {
-      const sbSerp = await scrapingBeeGoogleSearch(serpKeyword, loc.countryCode, domain, lang.languageCode).catch(() => null);
+    if ((!serpRaw || serpRaw.topResults.length === 0) && remaining() > 25_000) {
+      const sbSerp = await withTimeout(
+        scrapingBeeGoogleSearch(serpKeyword, loc.countryCode, domain, lang.languageCode),
+        15_000
+      ).catch(() => null);
       if (sbSerp && sbSerp.topResults.length > 0) {
         serpRaw = {
           yourPosition: sbSerp.yourPosition,
@@ -220,12 +230,6 @@ export async function runAudit(job: AuditJob): Promise<void> {
         };
       }
     }
-
-    // Real Google Ads search volume for that same keyword (separate endpoint;
-    // fine to run right after since it's a single small call).
-    const adsVolume = dfsReady
-      ? await googleAdsSearchVolume([serpKeyword], loc.locationCode!).catch(() => [])
-      : [];
 
     const serpSnapshot: SerpSnapshot | undefined = serpRaw
       ? {
