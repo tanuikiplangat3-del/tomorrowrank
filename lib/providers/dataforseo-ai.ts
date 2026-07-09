@@ -187,13 +187,16 @@ export async function geminiAnswers(
 // ---------------------------------------------------------------------------
 export async function perplexityAnswer(
   prompt: string,
-  opts: { model?: string } = {}
+  opts: { model?: string; countryIso?: string } = {}
 ): Promise<ChatGptAnswer> {
-  const { model = "sonar" } = opts;
+  const { model = "sonar", countryIso } = opts;
   const task: Record<string, unknown> = {
     user_prompt: prompt,
     model_name: model,
     max_output_tokens: 1024,
+    system_message: countryIso
+      ? `You are a helpful assistant answering for a user located in ${countryIso}. Give accurate, up-to-date information relevant to that market.`
+      : "You are a helpful assistant that provides accurate information.",
   };
   const data = await post("/ai_optimization/perplexity/llm_responses/live", [task], 45_000);
   const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
@@ -208,8 +211,56 @@ export async function perplexityAnswer(
   return { prompt, answer: answer.trim() };
 }
 
-export async function perplexityAnswers(prompts: string[]): Promise<ChatGptAnswer[]> {
-  const results = await Promise.allSettled(prompts.map((p) => perplexityAnswer(p)));
+export async function perplexityAnswers(
+  prompts: string[],
+  opts: { countryIso?: string } = {}
+): Promise<ChatGptAnswer[]> {
+  const results = await Promise.allSettled(prompts.map((p) => perplexityAnswer(p, opts)));
+  return results
+    .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
+    .map((r) => r.value);
+}
+
+// ---------------------------------------------------------------------------
+// CLAUDE (as a CHECKED platform) — distinct from lib/providers/llm.ts, which
+// calls Anthropic directly for OUR OWN judging/reasoning. This is a real
+// third-party check of what Claude tells END USERS when asked, via
+// DataForSEO's confirmed ai_optimization/claude/llm_responses/live endpoint —
+// needed because the pre-audit marketing copy claims Claude is one of the
+// checked platforms, so it has to actually be checked, not just implied.
+// ---------------------------------------------------------------------------
+export async function claudeAnswerDfs(
+  prompt: string,
+  opts: { model?: string; countryIso?: string } = {}
+): Promise<ChatGptAnswer> {
+  const { model = "claude-sonnet-4-5", countryIso } = opts;
+  const task: Record<string, unknown> = {
+    user_prompt: prompt,
+    model_name: model,
+    max_output_tokens: 1024,
+    web_search: true,
+    system_message: countryIso
+      ? `You are a helpful assistant answering for a user located in ${countryIso}. Give accurate, up-to-date information relevant to that market.`
+      : "You are a helpful assistant that provides accurate information.",
+  };
+  const data = await post("/ai_optimization/claude/llm_responses/live", [task]);
+  const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+  let answer = "";
+  for (const it of items) {
+    if (it.type === "message") {
+      for (const sec of it.sections ?? []) {
+        if (sec.type === "text" && sec.text) answer += sec.text + "\n";
+      }
+    }
+  }
+  return { prompt, answer: answer.trim() };
+}
+
+export async function claudeAnswersDfs(
+  prompts: string[],
+  opts: { countryIso?: string } = {}
+): Promise<ChatGptAnswer[]> {
+  const results = await Promise.allSettled(prompts.map((p) => claudeAnswerDfs(p, opts)));
   return results
     .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
     .map((r) => r.value);
@@ -329,5 +380,153 @@ export async function googleBusinessProfile(
     };
   } catch {
     return { found: false };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// (H) BING SERP — same shape as Google's organic call, confirmed endpoint
+// serp/bing/organic/live/advanced (full featured-snippet/PAA richness, unlike
+// Yahoo below). Used as a SECONDARY position check alongside Google, not a
+// replacement — most of the audited market's search traffic is still Google.
+// ---------------------------------------------------------------------------
+export async function bingOrganicSerp(
+  keyword: string,
+  locationCode: number,
+  languageCode: string,
+  targetDomain: string
+): Promise<GoogleSerpSnapshotRaw | null> {
+  try {
+    const data = await post("/serp/bing/organic/live/advanced", [
+      { keyword, location_code: locationCode, language_code: languageCode, device: "desktop" },
+    ]);
+    const items: any[] = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+    const host = targetDomain.replace(/^www\./, "").toLowerCase();
+    const organicItems = items.filter((it) => it.type === "organic");
+    const topResults = organicItems.slice(0, 10).map((it) => ({
+      position: it.rank_absolute ?? it.rank_group ?? 0,
+      domain: String(it.domain ?? "").toLowerCase(),
+      title: it.title ?? "",
+    }));
+    const yours = organicItems.find((it) => String(it.domain ?? "").toLowerCase().replace(/^www\./, "") === host);
+    const featuredSnippet = items.find((it) => it.type === "featured_snippet");
+    return {
+      yourPosition: yours?.rank_absolute ?? yours?.rank_group ?? null,
+      hasFeaturedSnippet: !!featuredSnippet,
+      featuredSnippetIsYours:
+        !!featuredSnippet && String(featuredSnippet.domain ?? "").toLowerCase().replace(/^www\./, "") === host,
+      hasPeopleAlsoAsk: items.some((it) => it.type === "people_also_ask"),
+      hasKnowledgePanel: items.some((it) => it.type === "knowledge_graph"),
+      topResults,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// (I) YAHOO SERP — confirmed endpoint is serp/yahoo/organic/live/REGULAR only
+// (no /advanced tier exists for Yahoo per DataForSEO's own endpoint list), so
+// only organic position is available — no featured snippet/PAA/knowledge
+// panel detection for Yahoo. Kept honest rather than guessed.
+// ---------------------------------------------------------------------------
+export async function yahooOrganicPosition(
+  keyword: string,
+  locationCode: number,
+  languageCode: string,
+  targetDomain: string
+): Promise<number | null> {
+  try {
+    const data = await post("/serp/yahoo/organic/live/regular", [
+      { keyword, location_code: locationCode, language_code: languageCode },
+    ]);
+    const items: any[] = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+    const host = targetDomain.replace(/^www\./, "").toLowerCase();
+    const organicItems = items.filter((it) => it.type === "organic");
+    const yours = organicItems.find((it) => String(it.domain ?? "").toLowerCase().replace(/^www\./, "") === host);
+    return yours?.rank_absolute ?? yours?.rank_group ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// (J) GOOGLE IMAGES & MAPS presence — confirmed endpoints
+// serp/google/images/live/advanced and serp/google/maps/live/advanced.
+// Lightweight presence checks, not full SERP snapshots: does the brand show
+// up at all when someone searches images for it, and does it appear on Maps
+// for a local-intent query (ties into the Business Profile check).
+// ---------------------------------------------------------------------------
+export async function googleImagesPresence(
+  brandQuery: string,
+  locationCode: number,
+  languageCode: string,
+  targetDomain: string
+): Promise<{ present: boolean; imageCount: number }> {
+  try {
+    const data = await post("/serp/google/images/live/advanced", [
+      { keyword: brandQuery, location_code: locationCode, language_code: languageCode },
+    ]);
+    const items: any[] = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+    const host = targetDomain.replace(/^www\./, "").toLowerCase();
+    const yours = items.filter((it) => String(it.domain ?? "").toLowerCase().replace(/^www\./, "") === host);
+    return { present: yours.length > 0, imageCount: yours.length };
+  } catch {
+    return { present: false, imageCount: 0 };
+  }
+}
+
+export async function googleMapsPresence(
+  query: string,
+  locationCode: number,
+  languageCode: string,
+  businessName: string
+): Promise<{ present: boolean; position: number | null }> {
+  try {
+    const data = await post("/serp/google/maps/live/advanced", [
+      { keyword: query, location_code: locationCode, language_code: languageCode },
+    ]);
+    const items: any[] = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+    const stem = businessName.toLowerCase();
+    const idx = items.findIndex((it) => String(it.title ?? "").toLowerCase().includes(stem));
+    return { present: idx !== -1, position: idx !== -1 ? idx + 1 : null };
+  } catch {
+    return { present: false, position: null };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// (K) ON-PAGE API — instant_pages (confirmed synchronous, single-URL, no
+// task_post/polling needed — fits our time budget). Used as a genuine SECOND,
+// independent source for the core technical fields (title, meta description,
+// canonical, robots tag, H1) to cross-check against our own crawler's regex
+// parse. Where the two disagree, the report says so explicitly rather than
+// picking one silently — that mismatch is itself useful information after the
+// false-negative bug found in Update 51.
+// ---------------------------------------------------------------------------
+export interface OnPageInstantResult {
+  title: string | null;
+  metaDescription: string | null;
+  canonical: string | null;
+  robotsNoindex: boolean;
+  h1Count: number;
+  wordCount: number | null;
+}
+
+export async function onPageInstantCheck(url: string): Promise<OnPageInstantResult | null> {
+  try {
+    const data = await post("/on_page/instant_pages", [{ url, enable_javascript: false }], 25_000);
+    const item = data?.tasks?.[0]?.result?.[0]?.items?.[0];
+    if (!item) return null;
+    const meta = item.meta ?? {};
+    return {
+      title: meta.title ?? null,
+      metaDescription: meta.description ?? null,
+      canonical: meta.canonical ?? null,
+      robotsNoindex: !!meta.robots?.index === false || /noindex/i.test(meta.robots ?? ""),
+      h1Count: meta.htags?.h1?.length ?? 0,
+      wordCount: meta.content?.plain_text_word_count ?? null,
+    };
+  } catch {
+    return null;
   }
 }

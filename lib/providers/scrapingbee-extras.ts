@@ -71,20 +71,22 @@ export function parseCoreFieldsResponse(raw: any): CoreFieldsExtraction | null {
 // ---------------------------------------------------------------------------
 export async function captureScreenshot(
   url: string,
-  opts: { protected?: boolean; timeoutMs?: number } = {}
+  opts: { protected?: boolean; timeoutMs?: number; viewport?: "desktop" | "mobile" } = {}
 ): Promise<string | null> {
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
+  const mobile = opts.viewport === "mobile";
   try {
     const params = new URLSearchParams({
       api_key: key,
       url,
       screenshot: "true",
       render_js: "true",
-      window_width: "1440",
-      window_height: "900",
+      window_width: mobile ? "390" : "1440",
+      window_height: mobile ? "844" : "900",
       block_ads: "true",
     });
+    if (mobile) params.set("device", "mobile");
     if (opts.protected) params.set("stealth_proxy", "true");
     const res = await fetch(`${BASE}?${params.toString()}`, {
       signal: AbortSignal.timeout(opts.timeoutMs ?? 25_000),

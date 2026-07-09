@@ -1,81 +1,117 @@
 "use client";
 // components/Report.tsx
 import type { AuditReport, AiVisibilityReport, CheckResult, SocialProfile } from "@/types/audit";
-import { GradeGauge, CategoryRadar, PriorityBadge, CategoryTag } from "./Primitives";
+import { GradeGauge, ScoreRing, CategoryRadar, PriorityBadge, CategoryTag } from "./Primitives";
 import { AiVisibilitySection } from "./AiVisibility";
 import { SiteIssues } from "./SiteIssues";
 import { GateContext, CtaButton } from "./Gate";
 
-const HEADLINE_CATS = ["On-Page SEO", "Links", "GEO"] as const;
-
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function ReadinessStat({ label, value }: { label: string; value: number }) {
+  const color = value >= 85 ? "text-good" : value >= 70 ? "text-wtgreen" : value >= 50 ? "text-warn" : "text-bad";
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className={`font-display text-2xl font-extrabold ${color}`}>{value}<span className="text-sm font-medium text-muted">/100</span></p>
+    </div>
+  );
+}
+
+function ScoreStat({ dotColor, label, value, sub }: { dotColor: string; label: string; value: number; sub?: string }) {
+  return (
+    <div>
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: dotColor }} /> {label}
+      </p>
+      <p className="font-display text-2xl font-extrabold text-paper">{value}<span className="text-sm font-medium text-muted">/100</span></p>
+      {sub && <p className="truncate text-xs text-muted">{sub}</p>}
+    </div>
+  );
+}
 
 export function Report({
   report, ai, gated = true, jobId, leadId, email,
 }: { report: AuditReport; ai?: AiVisibilityReport; gated?: boolean; jobId?: string; leadId?: string; email?: string }) {
-  const headlineScores = HEADLINE_CATS.map(
-    (c) => report.categories.find((x) => x.category === c)
-  ).filter(Boolean) as AuditReport["categories"];
-
   const failing = report.checks.filter((c) => c.status === "fail");
   const warning = report.checks.filter((c) => c.status === "warn");
+  const comp = report.competitorComparison;
 
   return (
     <GateContext.Provider value={{ gated, jobId, leadId, email }}>
     <div className="mx-auto max-w-6xl px-4 py-10">
-      {/* Intro card */}
+      {/* Hero */}
       <header className={CARD}>
-        <h1 className="font-display text-2xl font-extrabold text-paper">
-          SEO Audit for <span className="text-wtgreen">{prettyHost(report.meta.finalUrl)}</span>
-        </h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted">
-          This report grades your website across On-Page SEO, GEO (AI visibility), backlinks,
-          usability and performance on an A+ to F scale. Improving your grade helps your site
-          perform better for users and rank better in search and AI engines. Prioritised
-          recommendations are at the bottom of the report.
-        </p>
-        <p className="mt-2 text-xs text-muted">
-          Target: <span className="font-semibold text-wtgreen">{report.meta.country}</span> ·{" "}
-          <span className="font-semibold text-wtgreen">{report.meta.language}</span>
-          {report.meta.targetKeyword && <> · Keyword: <span className="font-semibold text-paper">{report.meta.targetKeyword}</span></>}
-          {report.meta.competitorUrl && <> · Compared against: <span className="font-semibold text-paper">{report.meta.competitorUrl}</span></>}
-        </p>
+        <div className="flex flex-col gap-6 md:flex-row md:items-start">
+          {/* Screenshot thumbnail, mobile shot overlaid in the corner */}
+          {report.meta.screenshotDesktop && (
+            <div className="relative w-full shrink-0 overflow-hidden rounded-lg border border-white/10 md:w-[200px]">
+              <img src={report.meta.screenshotDesktop} alt={`Homepage screenshot of ${prettyHost(report.meta.finalUrl)}`}
+                className="aspect-[4/3] w-full object-cover object-top" />
+              {report.meta.screenshotMobile && (
+                <img src={report.meta.screenshotMobile} alt="Mobile view"
+                  className="absolute bottom-2 right-2 w-12 rounded border-2 border-[#0b100e] object-cover shadow-lg" />
+              )}
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-2xl font-extrabold leading-snug text-paper">
+              {report.meta.pageTitle || `SEO Audit for ${prettyHost(report.meta.finalUrl)}`}
+            </h1>
+            <p className="mt-1 truncate text-sm text-muted">{report.meta.finalUrl}</p>
+            <p className="mt-3 text-sm leading-relaxed text-muted">{report.readiness.summary}</p>
+            {(report.meta.targetKeyword || report.meta.competitorUrl) && (
+              <p className="mt-2 text-xs text-muted">
+                {report.meta.targetKeyword && <>Keyword: <span className="font-semibold text-paper">{report.meta.targetKeyword}</span></>}
+                {report.meta.targetKeyword && report.meta.competitorUrl && <> · </>}
+                {report.meta.competitorUrl && <>Compared against: <span className="font-semibold text-paper">{report.meta.competitorUrl}</span></>}
+              </p>
+            )}
+          </div>
+
+          <div className="flex shrink-0 flex-col items-center">
+            <ScoreRing score={report.readiness.overall} size={140} label="Readiness" />
+          </div>
+        </div>
+
+        {/* Technical / Content / AI Visibility readiness */}
+        <div className="mt-8 grid grid-cols-1 gap-6 border-t border-white/10 pt-6 sm:grid-cols-3">
+          <ReadinessStat label="Technical Readiness" value={report.readiness.technical} />
+          <ReadinessStat label="Content Readiness" value={report.readiness.content} />
+          <ReadinessStat label="AI Visibility Readiness" value={report.readiness.aiVisibility} />
+        </div>
+
+        {/* Your score / Industry average / Top competitor — real computed data only */}
+        <div className="mt-6 grid grid-cols-1 gap-6 border-t border-white/10 pt-6 sm:grid-cols-3">
+          <ScoreStat dotColor="#EDEDED" label="Your Score" value={comp?.yourScore ?? report.readiness.overall} />
+          {comp?.industryAverage != null && (
+            <ScoreStat dotColor="#7E8B84" label="Industry Average" value={comp.industryAverage} />
+          )}
+          {comp?.topCompetitor && (
+            <ScoreStat dotColor="#4CA66B" label="Top Competitor" value={comp.topCompetitor.overall} sub={comp.topCompetitor.domain} />
+          )}
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
+          <p className="text-sm text-muted">Analyzed on {formatDate(report.meta.fetchedAt)}</p>
+          <CtaButton label="Talk to Expert" source="hero" />
+        </div>
       </header>
 
-      {/* Overall + radar */}
+      {/* Category breakdown radar — supplementary detail */}
       <section className={`mt-6 ${CARD}`}>
-        <h2 className="font-display text-xl font-bold text-paper">Audit Results</h2>
-        <div className="mt-6 grid items-center gap-8 md:grid-cols-2">
-          <div className="flex flex-col items-center">
-            <GradeGauge grade={report.overall.grade} score={report.overall.score} size={150} />
-            <p className="mt-3 font-display text-lg font-bold text-paper">{report.overall.summary}</p>
-            <span className="mt-2 rounded-md bg-bad/15 px-3 py-1 text-sm font-semibold text-bad">
-              Recommendations: {report.overall.recommendationCount}
-            </span>
-          </div>
-          <CategoryRadar categories={report.categories} />
-        </div>
-
-        {/* Category gauges row */}
-        <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
-          {headlineScores.map((c) => (
-            <GradeGauge key={c.category} grade={c.grade} score={c.score} size={96} label={c.category} />
-          ))}
-        </div>
+        <h2 className="font-display text-xl font-bold text-paper">Category Breakdown</h2>
+        <CategoryRadar categories={report.categories} />
       </section>
-
-      {/* Homepage screenshot — a real visual of what was audited */}
-      {report.meta.screenshotDesktop && (
-        <section className={`mt-6 ${CARD}`}>
-          <h3 className="font-display text-lg font-bold text-paper">Homepage Snapshot</h3>
-          <p className="mt-1 text-sm text-muted">What {prettyHost(report.meta.finalUrl)} looked like at the time of this audit.</p>
-          <img
-            src={report.meta.screenshotDesktop}
-            alt={`Homepage screenshot of ${prettyHost(report.meta.finalUrl)}`}
-            className="mt-4 w-full rounded-lg border border-white/10"
-          />
-        </section>
-      )}
 
       {/* Issues found */}
       <section className={`mt-6 ${CARD}`}>
@@ -116,6 +152,34 @@ export function Report({
         </section>
       )}
 
+      {/* Technical verification — an independent second opinion (DataForSEO
+          On-Page API) on the homepage's core fields, cross-checked against our
+          own crawler. Any disagreement is shown plainly, not resolved silently. */}
+      {report.technicalCrossCheck?.checked && (
+        <section className={`mt-6 ${CARD}`}>
+          <h2 className="font-display text-xl font-bold text-paper">Technical Verification</h2>
+          <p className="mt-1 text-sm text-muted">
+            Homepage title/meta/canonical/H1 confirmed against a second, independent source.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm">
+            {report.technicalCrossCheck.fields.map((f, i) => (
+              <li key={i} className="flex items-start justify-between gap-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                <span className="text-muted capitalize">{f.field.replace(/([A-Z])/g, " $1")}</span>
+                {f.agrees ? (
+                  <span className="font-semibold text-good">✓ Confirmed</span>
+                ) : (
+                  <span className="text-right text-xs">
+                    <span className="block font-semibold text-warn">⚠ Sources disagree</span>
+                    <span className="block text-muted">Ours: {f.ours.slice(0, 60)}</span>
+                    <span className="block text-muted">DataForSEO: {f.dataForSeo.slice(0, 60)}</span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* Multi-page crawl: clickable site issues */}
       {report.siteIssues && report.siteIssues.length > 0 && (
         <SiteIssues issues={report.siteIssues} meta={report.crawlMeta} />
@@ -151,7 +215,7 @@ export function Report({
         </h2>
         <p className="mt-2 text-muted">Welcome Tomorrow can implement every recommendation in this report.</p>
         <div className="mt-5">
-          <CtaButton label="Book a discovery call" source="report-footer" className="px-7 py-3 text-base" />
+          <CtaButton label="Talk to Expert" source="report-footer" className="px-7 py-3 text-base" />
         </div>
       </section>
     </div>
@@ -252,7 +316,11 @@ function DetailGrid({ report }: { report: AuditReport }) {
               </tr>
             ))}
             {keywords.organic.length === 0 && (
-              <tr><td colSpan={3} className="py-4 text-muted">No ranking keywords found.</td></tr>
+              <tr><td colSpan={3} className="py-4 text-muted">
+                No ranking keywords found — this is your biggest opportunity. Start by building brand awareness
+                through informational content around your niche: check what competitors already rank for, then
+                write new, more useful, more thorough content on the same topics to earn your first rankings.
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -283,6 +351,31 @@ function DetailGrid({ report }: { report: AuditReport }) {
           </tbody>
         </table>
       </div>
+
+      {/* Content Gap — keywords a competitor ranks for that we don't rank for at all */}
+      {keywords.contentGap.length > 0 && (
+        <div className={CARD}>
+          <h3 className="font-display text-lg font-bold text-paper">Content Gap</h3>
+          <p className="mt-1 text-sm text-muted">
+            <span className="font-semibold text-paper">{keywords.contentGap[0]?.competitorDomain}</span> ranks for these —
+            you don&apos;t rank for them at all yet.
+          </p>
+          <table className="mt-3 w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wide text-muted">
+              <tr><th className="py-1">Keyword</th><th>Their Pos.</th><th>Volume</th></tr>
+            </thead>
+            <tbody>
+              {keywords.contentGap.slice(0, 10).map((k, i) => (
+                <tr key={i} className="border-t border-white/10">
+                  <td className="py-2 pr-2 text-paper">{k.keyword}</td>
+                  <td className="font-semibold text-wtgreen">{k.competitorPosition}</td>
+                  <td className="text-muted">{k.searchVolume ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* SERP Snapshot — real Google result for the target/top-opportunity keyword */}
       {report.serpSnapshot && (
@@ -321,6 +414,25 @@ function DetailGrid({ report }: { report: AuditReport }) {
                     <span className="truncate text-muted">#{r.position} {r.domain}</span>
                   </li>
                 ))}
+              </ul>
+            </>
+          )}
+          {(report.serpSnapshot.bingPosition != null || report.serpSnapshot.yahooPosition != null || report.serpSnapshot.imagesPresence || report.serpSnapshot.mapsPresence) && (
+            <>
+              <h4 className="mt-4 text-sm font-bold text-paper">Other Search Surfaces</h4>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {report.serpSnapshot.bingPosition != null && (
+                  <li className="flex justify-between"><span className="text-muted">Bing position</span><span className="text-paper">{report.serpSnapshot.bingPosition ?? "Not in top 10"}</span></li>
+                )}
+                {report.serpSnapshot.yahooPosition != null && (
+                  <li className="flex justify-between"><span className="text-muted">Yahoo position</span><span className="text-paper">{report.serpSnapshot.yahooPosition ?? "Not in top 10"}</span></li>
+                )}
+                {report.serpSnapshot.imagesPresence && (
+                  <li className="flex justify-between"><span className="text-muted">Google Images</span><span className="text-paper">{report.serpSnapshot.imagesPresence.present ? `${report.serpSnapshot.imagesPresence.imageCount} image(s) showing` : "Not appearing"}</span></li>
+                )}
+                {report.serpSnapshot.mapsPresence && (
+                  <li className="flex justify-between"><span className="text-muted">Google Maps</span><span className="text-paper">{report.serpSnapshot.mapsPresence.present ? `Listed (#${report.serpSnapshot.mapsPresence.position})` : "Not appearing"}</span></li>
+                )}
               </ul>
             </>
           )}

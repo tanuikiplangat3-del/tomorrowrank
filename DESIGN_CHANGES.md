@@ -761,3 +761,59 @@ Specifically:
 Net effect: worst-case time spent on everything BEFORE the crawl+AI-visibility stage on the public tool dropped from a scenario that could consume nearly the entire 180s budget down to roughly 100–120s worst case — leaving the crawl and AI visibility (the actual point of the tool, and where ScrapingBee's stealth crawling does its real work) a real, guaranteed chunk of time instead of the scraps left over after everything else.
 
 No scope was cut to make this fit — every feature from Updates 45–48 is still fully wired in; this was purely about not letting the new work starve the time the crawl needs, which is exactly the failure that was reported.
+
+---
+
+## Update 51 — Three confirmed data-integrity/reliability bugs, found by tracing code against real screenshots (betika.com, kuda.com) rather than guessing
+
+Three separate real bugs, each confirmed by walking the exact code path against manual verification (Ahrefs' own dashboard, direct page inspection) — not assumptions.
+
+1. **Reverted the broken ScrapingBee `extract_rules` combination from Update 48.** This is the confirmed root cause of pages being wrongly reported as missing `<title>`, H1, and canonical tags (proven on `kuda.com/global/`, `kuda.com/about/`, and `betika.com` pages that demonstrably have all three). The assumption in Update 48 — that `json_response=true` + `extract_rules` returns BOTH the full rendered HTML *and* the extracted fields in one response — was wrong. In reality, when `extract_rules` is present, ScrapingBee's response contains ONLY the extracted JSON, with no HTML body at all. The code was then falling back to treating that raw JSON *text* as if it were the page's HTML and regex-parsing it for `<title>`/`<h1>` tags — which obviously find nothing in a JSON string, hence every proxied page falsely reporting these as missing. Fully reverted `lib/crawl/crawler.ts` and `lib/seo/fetcher.ts` to the plain `render_js`-only fetch + regex parse that was working correctly before Update 48. The CSS-extraction accuracy idea is shelved rather than re-attempted with an unverified assumption a second time.
+2. **Fixed missing `mode: "subdomains"` on 4 of 8 Ahrefs functions** (`domainRating`, `organicKeywords`, `organicCompetitors`, `keywordOpportunities`) — confirmed by comparing a live audit's "No ranking keywords found" against Ahrefs' own dashboard for the same domain (kuda.com), which showed 3.1K organic keywords, DR 52, 70.8K organic traffic. Per Ahrefs' own docs, omitting `mode` defaults to exact-host matching, which silently excludes `www.` and other subdomains — exactly the data these calls were missing. The other 4 Ahrefs functions (`backlinksStats`, `topBacklinks`, `referringDomains`, `topPagesByBacklinks`, `topAnchors`) already had this set correctly, which is why backlink data wasn't affected — only the keyword-related endpoints, added later, were missing it.
+3. **Fixed the Anthropic client having no request timeout — its SDK default is 10 minutes per call.** Combined with `analyzeGeo()`'s AI-Overview citation probe running as a sequential `for` loop (up to 3 calls, one after another, each web-search-augmented), this could alone exceed both the public tool's 3-minute budget and, in a bad case, even the internal tool's 30-minute one — independent of anything fixed in Update 50, and very likely still causing the "audit stopped responding" seen on kuda.com after that fix shipped. Set an explicit 25-second timeout on the shared Anthropic client (`lib/providers/llm.ts`) — this covers every Claude call in the codebase, not just GEO. Also converted the sequential probe loop to `Promise.allSettled` (`lib/geo/analyzer.ts`) with an explicit 20s per-call timeout, so worst case is now ~20-25s total instead of up to 3× whatever the hung call decided to take.
+
+**Not yet confirmed, flagged for awareness:** the AI Responses dashboard showing Gemini at 5/5 prompts mentioning the brand while Google AI Overview/AI Mode show 0/5 for the same domain is an unusual enough split that it deserves a closer look at the mention-detection logic, but nothing conclusive was found — noted here so it isn't forgotten, not fixed blind.
+
+---
+
+## Update 52 — Full report redesign (layout only — no color/font/style changes)
+
+Reorganized how the report is laid out, following a reference design, while keeping the existing color palette, fonts, and card/spacing system untouched throughout. New backend data added to support it; nothing from Updates 45-51 was removed.
+
+**Hero (top of report):**
+- Now shows the audited page's actual `<title>` as the heading (new `meta.pageTitle` field, populated from the existing on-page fetch — no new API call), with the URL underneath.
+- Homepage screenshot with a small mobile-viewport screenshot overlaid in its corner (`captureScreenshot` extended to accept a `viewport: "desktop" | "mobile"` option — one extra ScrapingBee call per audit).
+- Replaced the single overall grade with **3 readiness categories** (Technical / Content / AI Visibility), each an average of existing category scores (no new scoring logic — Technical = Usability+Performance+Other, Content = On-Page SEO+Social+Local, AI Visibility = GEO+Links), plus one big ring showing the plain average of the 3, with a short auto-generated summary naming the weakest area.
+- **Your Score / Industry Average / Top Competitor row is now REAL, computed data, not a placeholder or fabricated benchmark.** Up to 2 competitor domains (the manual one you enter, plus/or the top 1-2 Ahrefs-auto-detected organic competitors) get a fast, lite single-page audit (real on-page/technical checks, no crawl, no independent PageSpeed/GEO calls, to keep cost/time bounded) via the existing `runChecks`/`scoreCategories`/`overallScore` functions. "Top Competitor" = the higher-scoring of those; "Industry Average" only appears once 2+ real data points exist — never shown as a guess.
+- Removed the download/share icon buttons (weren't in our build to begin with — reference-only).
+- CTA changed to **"Talk to Expert"**, linking to Ochuko's booking calendar (reusing the existing `ctaHref()` helper).
+
+**Pre-audit form:**
+- Live favicon preview next to the URL input as you type, via Google's public favicon service (`google.com/s2/favicons`) — client-side only, no backend cost.
+- Added a "Checks your visibility across ChatGPT · Perplexity · Claude · Google" strip with each platform's real favicon, right below the form.
+- **Claude is now a genuinely checked platform, not just marketing copy.** Added `claudeAnswerDfs`/`claudeAnswersDfs` in `lib/providers/dataforseo-ai.ts` (confirmed `ai_optimization/claude/llm_responses/live` endpoint — same shape as the existing ChatGPT/Gemini/Perplexity calls), wired into the AI Visibility engine and the AI Responses dashboard as its own platform row.
+
+**Report body reorganized (content mostly unchanged, mostly reordered/renamed):**
+- "Site Audit" section renamed to **"Technical SEO Audit"** — same per-page crawl breakdown as before.
+- Empty-state copy for "no ranking keywords found" rewritten to frame it as an opportunity (build brand-first informational content, study what competitors already rank for, write something better) instead of a flat dead-end statement.
+- The AI Visibility section's "Share of Voice vs. Sentiment" bubble chart is replaced by the AI Responses dashboard (built in Update 47) moved into that same card slot, right next to Insights — same two-column layout as before, different right-hand content. The Overall Sentiment / Share of Voice donut section and the Citations section below are unchanged except the citations CTA now also reads "Talk to Expert".
+
+**New types:** `ReadinessBreakdown`, `CompetitorScore`, `CompetitorComparison`, `pageTitle` on `AuditMeta`, `"Claude"` added to `AiPlatformStat`'s platform union.
+
+---
+
+## Update 53 — Ahrefs Content Gap, DataForSEO Bing/Yahoo/Images/Maps/On-Page, Claude prompt diversity + Perplexity country fix
+
+All new DataForSEO endpoints confirmed against their own docs before implementing (Bing organic, Yahoo organic, Google Images, Google Maps, On-Page instant_pages) — none guessed, given what happened in Update 48/51.
+
+1. **Ahrefs Content Gap** (new report card, next to Keyword Opportunities). Keywords the competitor ranks for that the audited domain doesn't rank for AT ALL — distinct from Keyword Opportunities (our own near-misses) and Link Gap (backlinks, not keywords). No new Ahrefs endpoint needed: reuses `organicKeywords()` against the competitor domain, diffed client-side against our own keyword set.
+2. **DataForSEO Bing SERP** (`serp/bing/organic/live/advanced`, confirmed) — same shape as Google's, added as a secondary position check in the SERP Snapshot card.
+3. **DataForSEO Yahoo SERP** — confirmed Yahoo only has `serp/yahoo/organic/live/regular` (no `/advanced` tier exists for Yahoo at all, per DataForSEO's own endpoint list), so it's organic position only — no featured snippet/PAA/knowledge panel data for Yahoo. Documented as a real platform limitation, not a shortcut.
+4. **DataForSEO Google Images & Maps presence** (`serp/google/images/live/advanced`, `serp/google/maps/live/advanced`, both confirmed) — lightweight presence checks (does the brand show up at all), not full SERP snapshots. Maps only fires when the site already looks like a local business (reuses the existing Local-category heuristic) rather than for every SaaS/global brand.
+5. **DataForSEO On-Page API** (`on_page/instant_pages` — confirmed synchronous, single-URL, no polling needed, fits the time budget). This directly answers "which tool do I use to verify robots.txt/canonical/etc." — it's now a genuine **second, independent source** for title/meta description/canonical/H1 count, cross-checked against our own crawler's result in a new **Technical Verification** report section. Where the two disagree, the report says so explicitly (showing both values) rather than silently picking one — built specifically in response to the false-negative bug found in Update 51, so that kind of mismatch is now visible instead of hidden.
+6. **Claude/AI-visibility prompt diversity.** The prompt-generation instruction (`lib/ai-visibility/engine.ts: deriveContext`) now explicitly requires a MIX of question archetypes — brand-adjacent, comparison ("X vs Y"), best/top-list, how-to, and where-to-find — instead of allowing all 5 prompts to accidentally be near-identical "best agency in X" phrasings.
+7. **Perplexity was never actually country-grounded** — confirmed by re-reading the code: `perplexityAnswer` had no `countryIso`/`system_message` param at all, unlike ChatGPT/Gemini/Claude. Fixed to match the others.
+8. **Re-confirmed, not changed:** the audited country the user selects was already correctly passed through to ChatGPT/Gemini/Claude's web search grounding — it was never silently defaulting to the US. Also re-confirmed: Claude already determines a brand's real geographic scope (local/regional/global) from the homepage content itself, before generating any prompts — this was already built (`deriveContext`'s system prompt), just not something the user had visibility into.
+9. **Also re-confirmed:** the Social Media Presence dashboard (built in Phase 2) survived the Update 52 redesign intact — no action was needed there, it was already still rendering.
+
+**Not built, by deliberate scope decision, flagged rather than silently dropped:** DataForSEO News SERP — lower clear value for a lead-gen SEO/GEO audit tool (news relevance matters most for publishers), so it wasn't wired in. Can be added if there's a concrete use case for it.

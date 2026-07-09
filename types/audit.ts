@@ -78,6 +78,16 @@ export interface ReferringGeography { country: string; count: number; }
 // Keywords the domain already shows up for (position 4-50) but hasn't broken
 // into the top 3 yet — the closest, highest-value wins rather than a blind
 // "keyword ideas" list.
+// ---- Content Gap: keywords a competitor ranks for that we don't rank for AT
+// ALL (distinct from Keyword Opportunities, which is OUR near-miss rankings,
+// and from Link Gap, which is about backlinks not keywords). ----
+export interface ContentGapKeyword {
+  keyword: string;
+  searchVolume: number | null;
+  competitorPosition: number;
+  competitorDomain: string;
+}
+
 export interface KeywordOpportunity {
   keyword: string;
   position: number;
@@ -158,7 +168,7 @@ export interface VisibilityInsight {
 
 // ---- AI Responses dashboard (multi-LLM mention tracking, screenshot-style) ----
 export interface AiPlatformStat {
-  platform: "AI Overviews" | "ChatGPT" | "AI Mode" | "Gemini" | "Perplexity" | "Copilot" | "Grok";
+  platform: "AI Overviews" | "ChatGPT" | "AI Mode" | "Gemini" | "Perplexity" | "Claude" | "Copilot" | "Grok";
   responses: number | null;      // how many of the tracked prompts mentioned/cited the brand
   responsesOf: number | null;    // out of how many prompts were tracked
   responsesDelta: number | null; // vs the previous audit of this domain; null = no prior data
@@ -225,6 +235,7 @@ export interface CrawlMeta {
 export interface AuditMeta {
   url: string;
   finalUrl: string;
+  pageTitle?: string;          // the audited page's <title>, for the hero heading
   country: string;             // e.g. "Kenya"
   countryCode: string;         // e.g. "KE"
   language: string;            // e.g. "English"
@@ -245,6 +256,22 @@ export interface Recommendation {
 }
 
 // ---- Broader SERP snapshot (DataForSEO real Google SERP for the target/top keyword) ----
+// ---- Technical cross-check: an independent second opinion (DataForSEO
+// On-Page API) on the homepage's core fields, compared against our own
+// crawler's result. Built specifically so title/canonical/H1 findings are no
+// longer trusted from a single source only — see Update 51's false-negative
+// bug for why this matters. ----
+export interface TechnicalCrossCheckField {
+  field: "title" | "metaDescription" | "canonical" | "h1Count" | "noindex";
+  ours: string;
+  dataForSeo: string;
+  agrees: boolean;
+}
+export interface TechnicalCrossCheck {
+  checked: boolean; // false if DataForSEO On-Page wasn't reachable — never blocks the audit
+  fields: TechnicalCrossCheckField[];
+}
+
 export interface SerpSnapshot {
   keyword: string;
   searchVolume: number | null;   // real Google Ads volume, not Ahrefs' estimate
@@ -255,6 +282,10 @@ export interface SerpSnapshot {
   hasPeopleAlsoAsk: boolean;
   hasKnowledgePanel: boolean;
   topResults: { position: number; domain: string; title: string }[];
+  bingPosition?: number | null;   // secondary engine — same keyword, Bing SERP
+  yahooPosition?: number | null;  // secondary engine — organic-only, no SERP features (Yahoo has no /advanced tier)
+  imagesPresence?: { present: boolean; imageCount: number };
+  mapsPresence?: { present: boolean; position: number | null }; // only meaningful for local-intent businesses
 }
 
 // ---- Local business presence (DataForSEO Business Data API) ----
@@ -268,6 +299,30 @@ export interface LocalBusinessProfile {
   issue?: { title: string; recommendation: string; reason: string }; // populated when !found
 }
 
+// ---- Readiness breakdown (hero dashboard) — 3 groups averaged from the
+// existing category scores, no new scoring logic, just a regrouping. ----
+export interface ReadinessBreakdown {
+  technical: number;    // avg of Usability, Performance, Other
+  content: number;      // avg of On-Page SEO, Social, Local
+  aiVisibility: number; // avg of GEO, Links
+  overall: number;       // plain average of the 3 above
+  summary: string;
+}
+
+// ---- Competitor comparison (real, lite-audited — not a fabricated
+// "industry average"). Populated from up to 2 auto-detected/manual
+// competitor domains, each given a fast single-page check (no crawl, no
+// full PageSpeed/GEO) so cost/time stay bounded. ----
+export interface CompetitorScore {
+  domain: string;
+  overall: number;
+}
+export interface CompetitorComparison {
+  yourScore: number;
+  topCompetitor: CompetitorScore | null;
+  industryAverage: number | null; // null when fewer than 2 real data points exist — never a guess
+}
+
 export interface AuditReport {
   meta: AuditMeta;
   overall: { grade: Grade; score: number; summary: string; recommendationCount: number };
@@ -279,6 +334,7 @@ export interface AuditReport {
     paid: KeywordRanking[];
     trafficFromSearch: number | null;
     opportunities: KeywordOpportunity[]; // ranking 4-50, not yet top-3 — closest wins
+    contentGap: ContentGapKeyword[];     // competitor ranks for these, we don't rank at all
   };
   backlinks: {
     summary: BacklinkSummary;
@@ -293,6 +349,9 @@ export interface AuditReport {
   social: SocialProfile[]; // live follower/engagement numbers, where publicly visible
   serpSnapshot?: SerpSnapshot;       // real Google SERP for the target/top-opportunity keyword
   localBusiness?: LocalBusinessProfile; // Google Business Profile check
+  technicalCrossCheck?: TechnicalCrossCheck; // second-opinion verification (DataForSEO On-Page API)
+  readiness: ReadinessBreakdown;
+  competitorComparison?: CompetitorComparison;
   siteIssues?: SiteIssue[];   // multi-page crawl findings (clickable drill-down)
   crawlMeta?: CrawlMeta;
 }

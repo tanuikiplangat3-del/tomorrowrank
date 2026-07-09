@@ -12,6 +12,11 @@ import type {
   SocialProfile,
   SerpSnapshot,
   LocalBusinessProfile,
+  GeoReport,
+  ReadinessBreakdown,
+  CompetitorComparison,
+  ContentGapKeyword,
+  TechnicalCrossCheck,
 } from "@/types/audit";
 import { updateJob } from "@/lib/store/jobs";
 import { fetchPageSignals, scrapingBeeConfigured } from "@/lib/seo/fetcher";
@@ -21,6 +26,11 @@ import {
   googleOrganicSerp,
   googleAdsSearchVolume,
   googleBusinessProfile,
+  bingOrganicSerp,
+  yahooOrganicPosition,
+  googleImagesPresence,
+  googleMapsPresence,
+  onPageInstantCheck,
 } from "@/lib/providers/dataforseo-ai";
 import { pageSpeed } from "@/lib/providers/pagespeed";
 import {
@@ -114,12 +124,18 @@ export async function runAudit(job: AuditJob): Promise<void> {
       YouTube: signals.social.youtube,
     }).filter(([, u]) => !!u) as [SocialProfile["platform"], string][];
 
-    const [mobile, desktop, screenshot, socialResults] = await Promise.all([
+    const [mobile, desktop, screenshot, screenshotMobile, socialResults] = await Promise.all([
       pageSpeed(signals.finalUrl, "mobile", psTimeout).catch(() => emptyPSI("mobile")),
       pageSpeed(signals.finalUrl, "desktop", psTimeout).catch(() => emptyPSI("desktop")),
       captureScreenshot(signals.finalUrl, {
         protected: signals.protected,
         timeoutMs: job.input.internal ? 25_000 : 15_000,
+        viewport: "desktop",
+      }).catch(() => null),
+      captureScreenshot(signals.finalUrl, {
+        protected: signals.protected,
+        timeoutMs: job.input.internal ? 25_000 : 15_000,
+        viewport: "mobile",
       }).catch(() => null),
       Promise.allSettled(
         socialTargets.map(([, url]) => scrapeSocialProfile(url, { allowStealth: job.input.internal }))
@@ -167,6 +183,30 @@ export async function runAudit(job: AuditJob): Promise<void> {
       manualCompetitorDomain ?? (autoCompetitors[0]?.competitor_domain as string | undefined) ?? null;
     const linkGapPromise = computeLinkGap(domain, competitorDomain, refDoms, job.input.internal);
 
+    // Competitor comparison ("Your score" vs "Top competitor" vs "Industry
+    // average" on the hero dashboard) — up to 2 REAL lite-audited domains
+    // (manual competitor + top auto-detected, or top 2 auto-detected if none
+    // was given), never a fabricated benchmark number. "Industry average"
+    // only appears once 2+ real data points exist.
+    const competitorDomainsToAudit = Array.from(
+      new Set(
+        [manualCompetitorDomain, autoCompetitors[0]?.competitor_domain, autoCompetitors[1]?.competitor_domain]
+          .filter((d): d is string => !!d && d !== domain)
+      )
+    ).slice(0, 2);
+    const competitorScoresPromise = Promise.all(
+      competitorDomainsToAudit.map((d) => auditCompetitorLite(d, targetKeyword))
+    );
+
+    // Content Gap: keywords the competitor ranks for that we don't rank for AT
+    // ALL — distinct from Keyword Opportunities (our own near-misses) and
+    // Link Gap (backlinks, not keywords). Reuses organicKeywords(), just
+    // called against the competitor domain and diffed against our own set —
+    // no new Ahrefs endpoint needed.
+    const contentGapPromise = competitorDomain
+      ? organicKeywords(competitorDomain, loc.countryCode, 50).catch(() => [])
+      : Promise.resolve([] as any[]);
+
     // 4. GEO analysis (Claude + web-search citation probe) — run in parallel
     // with the SERP snapshot, real Google Ads volume, Business Profile
     // lookup, and the link gap above. All independent of each other.
@@ -192,8 +232,15 @@ export async function runAudit(job: AuditJob): Promise<void> {
     })();
 
     const dfsReady = dataForSeoConfigured() && !!loc.locationCode;
+    // Maps only makes sense as a signal when the site actually looks like a
+    // local/physical business — reuse the same heuristic driving the Local
+    // category checks rather than firing it for every SaaS/global brand.
+    const looksLocal = !!signals.hasLocalBusinessSchema || (!!signals.hasAddress && !!signals.hasPhone);
 
-    const [geo, serpRawDfs, businessRaw, adsVolume, linkGap] = await Promise.all([
+    const [
+      geo, serpRawDfs, businessRaw, adsVolume, linkGap, competitorScoresRaw,
+      contentGapRaw, bingRaw, yahooPosition, imagesPresence, mapsPresence, onPageRaw,
+    ] = await Promise.all([
       analyzeGeo(signals, domain, probeQueries),
       dfsReady
         ? withTimeout(googleOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
@@ -205,6 +252,23 @@ export async function runAudit(job: AuditJob): Promise<void> {
         ? withTimeout(googleAdsSearchVolume([serpKeyword], loc.locationCode!), 12_000).catch(() => [])
         : Promise.resolve([]),
       withTimeout(linkGapPromise, 15_000).catch(() => ({ competitor: competitorDomain, domains: [] })),
+      withTimeout(competitorScoresPromise, 22_000).catch(() => competitorDomainsToAudit.map(() => null)),
+      withTimeout(contentGapPromise, 15_000).catch(() => []),
+      dfsReady
+        ? withTimeout(bingOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
+        : Promise.resolve(null),
+      dfsReady
+        ? withTimeout(yahooOrganicPosition(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
+        : Promise.resolve(null),
+      dfsReady
+        ? withTimeout(googleImagesPresence(domain.split(".")[0], loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => undefined)
+        : Promise.resolve(undefined),
+      dfsReady && looksLocal
+        ? withTimeout(googleMapsPresence(businessNameGuess, loc.locationCode!, lang.languageCode, businessNameGuess), 15_000).catch(() => undefined)
+        : Promise.resolve(undefined),
+      dataForSeoConfigured()
+        ? withTimeout(onPageInstantCheck(signals.finalUrl), 20_000).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
     // Fallback: if DataForSEO's SERP call failed or found nothing at all
@@ -242,6 +306,10 @@ export async function runAudit(job: AuditJob): Promise<void> {
           hasPeopleAlsoAsk: serpRaw.hasPeopleAlsoAsk,
           hasKnowledgePanel: serpRaw.hasKnowledgePanel,
           topResults: serpRaw.topResults,
+          bingPosition: bingRaw?.yourPosition ?? null,
+          yahooPosition: yahooPosition ?? null,
+          imagesPresence,
+          mapsPresence,
         }
       : undefined;
 
@@ -267,6 +335,59 @@ export async function runAudit(job: AuditJob): Promise<void> {
           }
       : { checked: false, found: false };
 
+    // Content Gap: keywords the competitor ranks for that WE don't rank for at
+    // all. Diffed client-side against our own organic-keywords set — no new
+    // Ahrefs endpoint, just a second call to organicKeywords() for the
+    // competitor domain (already fetched above, in parallel with everything else).
+    const ourKeywordSet = new Set(organic.map((k) => k.keyword.toLowerCase()));
+    const contentGap: ContentGapKeyword[] = competitorDomain
+      ? (contentGapRaw as any[])
+          .filter((it) => it?.keyword && !ourKeywordSet.has(String(it.keyword).toLowerCase()))
+          .sort((a, b) => (b?.volume ?? 0) - (a?.volume ?? 0))
+          .slice(0, 15)
+          .map((it) => ({
+            keyword: it.keyword,
+            searchVolume: it.volume ?? null,
+            competitorPosition: it.best_position ?? 0,
+            competitorDomain,
+          }))
+      : [];
+
+    // Technical cross-check: compare our own crawler's homepage read against
+    // DataForSEO On-Page API's independent read of the same page. Any
+    // disagreement is surfaced, not silently resolved — see Update 51.
+    const technicalCrossCheck: TechnicalCrossCheck | undefined = onPageRaw
+      ? {
+          checked: true,
+          fields: [
+            {
+              field: "title",
+              ours: signals.title ?? "(none)",
+              dataForSeo: onPageRaw.title ?? "(none)",
+              agrees: (signals.title ?? "").trim() === (onPageRaw.title ?? "").trim(),
+            },
+            {
+              field: "metaDescription",
+              ours: signals.metaDescription ?? "(none)",
+              dataForSeo: onPageRaw.metaDescription ?? "(none)",
+              agrees: (signals.metaDescription ?? "").trim() === (onPageRaw.metaDescription ?? "").trim(),
+            },
+            {
+              field: "canonical",
+              ours: signals.canonical ?? "(none)",
+              dataForSeo: onPageRaw.canonical ?? "(none)",
+              agrees: (signals.canonical ?? "").trim() === (onPageRaw.canonical ?? "").trim(),
+            },
+            {
+              field: "h1Count",
+              ours: String(signals.h1?.length ?? 0),
+              dataForSeo: String(onPageRaw.h1Count),
+              agrees: (signals.h1?.length ?? 0) === onPageRaw.h1Count,
+            },
+          ],
+        }
+      : { checked: false, fields: [] };
+
     // 5. Run checks + scoring
     await set("Scoring your site", 72);
     const checks = runChecks(signals, { mobile, desktop }, geo, targetKeyword);
@@ -290,6 +411,23 @@ export async function runAudit(job: AuditJob): Promise<void> {
     const categories = scoreCategories(checks);
     const overall = overallScore(categories);
     const recommendations = buildRecommendations(checks);
+    const readiness = computeReadiness(categories);
+
+    const competitorScores: CompetitorComparison["topCompetitor"][] = competitorDomainsToAudit.map((d, i) => {
+      const score = competitorScoresRaw[i];
+      return score != null ? { domain: d, overall: score } : null;
+    });
+    const realCompetitorScores = competitorScores.filter((c): c is { domain: string; overall: number } => !!c);
+    const competitorComparison: CompetitorComparison | undefined = realCompetitorScores.length
+      ? {
+          yourScore: overall.score,
+          topCompetitor: realCompetitorScores.reduce((a, b) => (b.overall > a.overall ? b : a)),
+          industryAverage:
+            realCompetitorScores.length >= 2
+              ? Math.round(realCompetitorScores.reduce((s, c) => s + c.overall, 0) / realCompetitorScores.length)
+              : null,
+        }
+      : undefined;
 
     // 5b. Kick off AI Visibility (DataForSEO) IN PARALLEL with the crawl. They are
     // independent, so running them together means AI visibility is never starved
@@ -388,6 +526,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
       meta: {
         url,
         finalUrl: signals.finalUrl,
+        pageTitle: signals.title ?? undefined,
         country,
         countryCode: loc.countryCode,
         language,
@@ -395,6 +534,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
         targetKeyword,
         competitorUrl: competitorUrl?.trim() || undefined,
         screenshotDesktop: screenshot ?? undefined,
+        screenshotMobile: screenshotMobile ?? undefined,
         fetchedAt: new Date().toISOString(),
       },
       overall: {
@@ -414,6 +554,7 @@ export async function runAudit(job: AuditJob): Promise<void> {
         paid,
         trafficFromSearch: estimateTraffic(organic),
         opportunities,
+        contentGap,
       },
       backlinks: {
         summary: blSummary,
@@ -428,6 +569,9 @@ export async function runAudit(job: AuditJob): Promise<void> {
       social,
       serpSnapshot,
       localBusiness,
+      technicalCrossCheck,
+      readiness,
+      competitorComparison,
       ...(siteIssues ? { siteIssues } : {}),
       ...(crawlMeta ? { crawlMeta } : {}),
     };
@@ -525,7 +669,54 @@ async function computeLinkGap(
   }
 }
 
+function computeReadiness(categories: { category: string; score: number }[]): ReadinessBreakdown {
+  const avg = (names: string[]) => {
+    const scores = categories.filter((c) => names.includes(c.category)).map((c) => c.score);
+    return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  };
+  const technical = avg(["Usability", "Performance", "Other"]);
+  const content = avg(["On-Page SEO", "Social", "Local"]);
+  const aiVisibility = avg(["GEO", "Links"]);
+  const overall = Math.round((technical + content + aiVisibility) / 3);
+
+  const grade = (n: number) => (n >= 85 ? "excellent" : n >= 70 ? "good" : n >= 50 ? "fair" : "weak");
+  const weakest = [
+    { label: "technical foundations", score: technical },
+    { label: "on-page content", score: content },
+    { label: "AI visibility", score: aiVisibility },
+  ].sort((a, b) => a.score - b.score)[0];
+  const summary =
+    `Averaging ${grade(overall)} technical, content, and AI-visibility readiness. ` +
+    `${weakest.label} is the biggest opportunity right now, at ${weakest.score}/100.`;
+
+  return { technical, content, aiVisibility, overall, summary };
+}
+
+// Fast, single-page comparison score for a competitor domain — no crawl, no
+// independent PageSpeed/GEO calls (would double the cost/time of every audit
+// that has a competitor). Real on-page/technical checks only, so the score is
+// genuinely computed, not fabricated — just a lighter-weight comparison than
+// the full audit given to the primary domain.
+async function auditCompetitorLite(url: string, targetKeyword?: string): Promise<number | null> {
+  try {
+    const signals = await withTimeout(fetchPageSignals(url), 20_000);
+    if (!signals) return null;
+    const stubPerf = { mobile: emptyPSI("mobile"), desktop: emptyPSI("desktop") };
+    const stubGeo: GeoReport = {
+      llmReadableScore: 50, renderedContentRatio: 50, hasLlmsTxt: false,
+      hasIdentitySchema: false, hasOrganizationSchema: false, authoritySignals: [],
+      aiOverviewCitations: [], googleAiSearchPresence: false,
+    };
+    const checks = runChecks(signals, stubPerf, stubGeo, targetKeyword);
+    const categories = scoreCategories(checks);
+    return overallScore(categories).score;
+  } catch {
+    return null;
+  }
+}
+
 function mapKeywords(items: any[]): KeywordRanking[] {
+
   // Ahrefs organic-keywords columns: keyword, best_position, volume,
   // sum_traffic, best_position_url, keyword_difficulty, cpc
   return items

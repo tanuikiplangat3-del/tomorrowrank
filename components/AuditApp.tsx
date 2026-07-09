@@ -171,13 +171,23 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       {phase === "input" || phase === "error" ? (
         <div className="mt-10">
           <div className="flex flex-col gap-3 rounded-xl2 border border-glassBorder bg-glass p-2 backdrop-blur-sm sm:flex-row sm:items-center sm:p-1.5">
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && start()}
-              placeholder="Example.com"
-              className="flex-1 rounded-lg bg-transparent px-4 py-3 text-lg text-paper outline-none placeholder:text-white/40"
-            />
+            <div className="flex flex-1 items-center gap-2 pl-3">
+              {url.trim().length > 2 && (
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(prettyHost(url))}&sz=64`}
+                  alt=""
+                  className="h-5 w-5 shrink-0 rounded-sm"
+                  onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}
+                />
+              )}
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && start()}
+                placeholder="Example.com"
+                className="flex-1 rounded-lg bg-transparent py-3 text-lg text-paper outline-none placeholder:text-white/40"
+              />
+            </div>
             <button
               onClick={start}
               className="rounded-lg bg-wtgreen px-8 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep"
@@ -211,6 +221,23 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
           </div>
 
           {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
+
+          {/* What we check visibility across */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted">
+            <span>Checks your visibility across</span>
+            <span className="flex items-center gap-1.5 font-semibold text-paper">
+              <img src="https://www.google.com/s2/favicons?domain=chatgpt.com&sz=32" alt="" className="h-4 w-4" /> ChatGPT
+            </span>
+            <span className="flex items-center gap-1.5 font-semibold text-paper">
+              <img src="https://www.google.com/s2/favicons?domain=perplexity.ai&sz=32" alt="" className="h-4 w-4" /> Perplexity
+            </span>
+            <span className="flex items-center gap-1.5 font-semibold text-paper">
+              <img src="https://www.google.com/s2/favicons?domain=claude.ai&sz=32" alt="" className="h-4 w-4" /> Claude
+            </span>
+            <span className="flex items-center gap-1.5 font-semibold text-paper">
+              <img src="https://www.google.com/s2/favicons?domain=google.com&sz=32" alt="" className="h-4 w-4" /> Google
+            </span>
+          </div>
         </div>
       ) : (
         <Processing job={job} url={url} country={country} language={language} internal={internal} />

@@ -7,7 +7,6 @@
 // audit always finishes. On Vercel Pro set CRAWL_MAX_PAGES=50 & maxDuration=300.
 
 import { analyzePage, type PageFacts } from "./analyzer";
-import { CORE_FIELDS_EXTRACT_RULES, parseCoreFieldsResponse, type CoreFieldsExtraction } from "@/lib/providers/scrapingbee-extras";
 
 export interface CrawlResult {
   startUrl: string;
@@ -65,12 +64,6 @@ function beeUrl(url: string, mode: ProxyMode): string {
     api_key: process.env.SCRAPINGBEE_API_KEY!,
     url,
     render_js: "true",
-    // Ask for the CSS-selector extraction alongside the normal page fetch, in
-    // the SAME request (no extra ScrapingBee call, no extra cost) — see
-    // lib/providers/scrapingbee-extras.ts for why CSS rather than AI extraction
-    // is used for these specific fields.
-    json_response: "true",
-    extract_rules: CORE_FIELDS_EXTRACT_RULES,
   });
   if (mode === "premium") params.set("premium_proxy", "true");
   if (mode === "stealth") {
@@ -88,7 +81,7 @@ async function fetchText(
   url: string,
   timeoutMs: number,
   proxy: ProxyMode = "none"
-): Promise<{ status: number; body: string; finalUrl: string; coreFields?: CoreFieldsExtraction }> {
+): Promise<{ status: number; body: string; finalUrl: string }> {
   // When a proxy mode is requested (protected site), go STRAIGHT through
   // ScrapingBee — no doomed direct hit first. This is what lets a Cloudflare/WAF
   // site be crawled like a normal site.
@@ -100,16 +93,9 @@ async function fetchText(
       const r = await fetch(beeUrl(url, proxy), {
         signal: AbortSignal.timeout(beeTimeout),
       });
-      const raw = await r.text();
-      // json_response=true means the payload is JSON, not raw HTML — parse it
-      // and fall back to treating raw text as the body if parsing fails for
-      // any reason (never a hard failure just because the extraction shape
-      // wasn't as expected).
-      const parsed = tryParseJson(raw);
-      const coreFields = parseCoreFieldsResponse(parsed) ?? undefined;
-      const body = coreFields?.html ?? raw;
-      if (r.ok) return { status: 200, body, finalUrl: url, coreFields };
-      return { status: r.status, body, finalUrl: url, coreFields };
+      const body = await r.text();
+      if (r.ok) return { status: 200, body, finalUrl: url };
+      return { status: r.status, body, finalUrl: url };
     } catch {
       return { status: 0, body: "", finalUrl: url };
     }
@@ -162,23 +148,13 @@ async function fetchText(
       const r = await fetch(beeUrl(url, mode), {
         signal: AbortSignal.timeout(beeTimeout),
       });
-      const raw = await r.text();
-      const parsed = tryParseJson(raw);
-      const coreFields = parseCoreFieldsResponse(parsed) ?? undefined;
-      const body = coreFields?.html ?? raw;
-      if (r.ok) return { status: 200, body, finalUrl: url, coreFields };
+      const body = await r.text();
+      if (r.ok) return { status: 200, body, finalUrl: url };
     } catch {
       /* keep the direct result */
     }
   }
   return direct;
-}
-
-// Best-effort JSON.parse — used for ScrapingBee's json_response=true payloads.
-// Returns null (not a throw) on anything that isn't valid JSON, so callers can
-// gracefully fall back to treating the raw text as plain HTML.
-function tryParseJson(text: string): any {
-  try { return JSON.parse(text); } catch { return null; }
 }
 
 // Parse <loc> entries from a sitemap or sitemap index (recurses one level).
@@ -256,14 +232,14 @@ export async function crawlSite(
   const origin = new URL(start).origin;
 
   // 1. Fetch homepage first (also gives us the real final URL + its links)
-  let home: { status: number; body: string; finalUrl: string; coreFields?: CoreFieldsExtraction };
+  let home: { status: number; body: string; finalUrl: string };
   try {
     home = await fetchText(start, 15_000, proxy);
   } catch {
     return { startUrl: start, finalUrl: start, pages: [], discovered: 0, crawled: 0, source: "crawl", truncated: false };
   }
   const finalUrl = home.finalUrl;
-  const homeFacts = analyzePage(finalUrl, home.status, home.body, home.coreFields);
+  const homeFacts = analyzePage(finalUrl, home.status, home.body);
 
   // 2. Prefer sitemap for the URL set; else BFS from homepage links.
   let source: CrawlResult["source"] = "crawl";
@@ -307,7 +283,7 @@ export async function crawlSite(
     if (remaining() < 4_000) { truncated = true; return; }
     try {
       const r = await fetchText(u, Math.min(perPage, remaining() - 2000), proxy);
-      pages.push(analyzePage(r.finalUrl || u, r.status, r.body, r.coreFields));
+      pages.push(analyzePage(r.finalUrl || u, r.status, r.body));
       // Enrich BFS: if we started from homepage links and still have room, add new internal links.
       if (source === "crawl" && pages.length < maxPages) {
         const facts = pages[pages.length - 1];

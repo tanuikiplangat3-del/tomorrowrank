@@ -3,7 +3,7 @@ import { Report } from "@/components/Report";
 import type { AuditReport, AiVisibilityReport } from "@/types/audit";
 
 const report: AuditReport = {
-  meta: { url: "welcometomorrow.io", finalUrl: "https://welcometomorrow.io", country: "Kenya", countryCode: "KE", language: "English", languageCode: "en", targetKeyword: "growth agency", fetchedAt: new Date().toISOString() },
+  meta: { url: "welcometomorrow.io", finalUrl: "https://welcometomorrow.io", pageTitle: "Growth Marketing Agency | Welcome Tomorrow", country: "Kenya", countryCode: "KE", language: "English", languageCode: "en", targetKeyword: "growth agency", fetchedAt: new Date().toISOString() },
   overall: { grade: "B", score: 84, summary: "Your page could be better", recommendationCount: 14 },
   categories: [
     { category: "On-Page SEO", grade: "A-", score: 91, passed: 9, total: 11 },
@@ -49,6 +49,10 @@ const report: AuditReport = {
       { keyword:"growth agency nairobi", position:6, searchVolume:320, difficulty:24, url:"https://welcometomorrow.io/services/seo" },
       { keyword:"b2b growth consulting kenya", position:9, searchVolume:140, difficulty:18 },
     ],
+    contentGap: [
+      { keyword:"performance marketing agency africa", searchVolume:210, competitorPosition:3, competitorDomain:"growthcurve.com" },
+      { keyword:"data driven growth partner", searchVolume:90, competitorPosition:5, competitorDomain:"growthcurve.com" },
+    ],
   },
   backlinks: {
     summary: { totalBacklinks: 1240, referringDomains: 86, domainAuthority: 38, dofollow: 910, nofollow: 330 },
@@ -76,6 +80,15 @@ const report: AuditReport = {
     googleAiSearchPresence:false,
   },
   crawlMeta: { source:"sitemap", discovered:63, crawled:50, truncated:true, score:71, grade:"C", checkedCount:19, notCheckedCount:4 },
+  readiness: {
+    technical: 74, content: 68, aiVisibility: 65, overall: 69,
+    summary: "Averaging good technical, content, and AI-visibility readiness. AI visibility is the biggest opportunity right now, at 65/100.",
+  },
+  competitorComparison: {
+    yourScore: 69,
+    topCompetitor: { domain: "growthcurve.co", overall: 84 },
+    industryAverage: 71,
+  },
   social: [
     { platform:"Facebook", url:"https://facebook.com/welcometomorrow", followers:1240, engagement:38, handle:"@welcometomorrow", available:true },
     { platform:"Instagram", url:"https://instagram.com/welcometomorrow", followers:null, engagement:null, handle:null, available:false },
@@ -165,6 +178,7 @@ const ai: AiVisibilityReport = {
       { platform:"AI Mode", responses:0, responsesOf:5, responsesDelta:0, pages:0, pagesDelta:0, available:true },
       { platform:"Gemini", responses:1, responsesOf:5, responsesDelta:1, pages:null, pagesDelta:null, available:true },
       { platform:"Perplexity", responses:0, responsesOf:5, responsesDelta:0, pages:null, pagesDelta:null, available:true },
+      { platform:"Claude", responses:2, responsesOf:5, responsesDelta:1, pages:null, pagesDelta:null, available:true },
       { platform:"Copilot", responses:null, responsesOf:null, responsesDelta:null, pages:null, pagesDelta:null, available:false, note:"Not available — no API access to Copilot from any connected provider." },
       { platform:"Grok", responses:null, responsesOf:null, responsesDelta:null, pages:null, pagesDelta:null, available:false, note:"Not available — no API access to Grok from any connected provider." },
     ],

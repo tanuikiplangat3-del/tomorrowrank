@@ -49,6 +49,7 @@ export async function domainRating(target: string) {
       target,
       date: today(),
       protocol: "both",
+      mode: "subdomains",
     });
     return {
       domainRating: data?.domain_rating?.domain_rating ?? data?.domain_rating ?? null,
@@ -145,6 +146,7 @@ export async function organicKeywords(
 ) {
   const data = await get("/site-explorer/organic-keywords", {
     target,
+    mode: "subdomains",
     country: country.toUpperCase(),
     select: "keyword,best_position,volume,sum_traffic,best_position_url,keyword_difficulty,cpc",
     order_by: "sum_traffic:desc",
@@ -159,6 +161,7 @@ export async function organicCompetitors(target: string, country: string, limit 
   try {
     const data = await get("/site-explorer/organic-competitors", {
       target,
+      mode: "subdomains",
       country: country.toUpperCase(),
       select: "competitor_domain,common_keywords,domain_rating",
       order_by: "common_keywords:desc",
@@ -182,6 +185,7 @@ export async function keywordOpportunities(target: string, country: string, limi
   try {
     const data = await get("/site-explorer/organic-keywords", {
       target,
+      mode: "subdomains",
       country: country.toUpperCase(),
       select: "keyword,best_position,volume,keyword_difficulty,best_position_url",
       where: JSON.stringify({

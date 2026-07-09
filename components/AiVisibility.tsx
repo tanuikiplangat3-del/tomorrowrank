@@ -24,6 +24,7 @@ const PLATFORM_ICON: Record<AiPlatformStat["platform"], string> = {
   "AI Mode": "G",
   Gemini: "✦",
   Perplexity: "◈",
+  Claude: "▲",
   Copilot: "◫",
   Grok: "⨂",
 };
@@ -35,11 +36,11 @@ function DeltaTag({ value }: { value: number | null }) {
   return <span className={`font-semibold ${color}`}>{sign}{value}</span>;
 }
 
-function AiResponsesDashboard({ data }: { data: AiVisibilityReport["aiResponses"] }) {
+function AiResponsesDashboard({ data, bare = false }: { data: AiVisibilityReport["aiResponses"]; bare?: boolean }) {
   if (!data) return null;
   const [aiOverviews, chatgpt, ...rest] = data.platforms;
   return (
-    <div className={`${CARD} mb-5`}>
+    <div className={bare ? "mt-4" : `${CARD} mb-5`}>
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-display text-lg font-bold text-paper">AI Responses</h3>
         <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-muted">
@@ -143,10 +144,7 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
         </span>
       </div>
 
-      {/* AI Responses — multi-platform mention tracking */}
-      <AiResponsesDashboard data={data.aiResponses} />
-
-      {/* Row 1: Insights + Bubble */}
+      {/* Row 1: Insights + AI Responses (replaces the old Share of Voice vs Sentiment bubble chart) */}
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Insights */}
         <div className={CARD}>
@@ -159,42 +157,13 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
           </ol>
         </div>
 
-        {/* Share of Voice vs Sentiment bubble */}
+        {/* AI Responses — real platform-by-platform citation/mention tracking */}
         <div className={CARD}>
-          <h3 className="font-display text-lg font-bold text-paper">Share of Voice vs. Sentiment</h3>
-          <div className="mt-3 rounded-lg bg-violet/10 p-3">
+          <div className="rounded-lg bg-violet/10 p-3">
             <p className="text-sm font-bold text-violet">✦ {data.headline.tag}</p>
             <p className="text-sm text-paper">{data.headline.text}</p>
           </div>
-          <div className="mt-4 h-[280px]">
-            <ResponsiveContainer>
-              <ScatterChart margin={{ top: 10, right: 16, bottom: 20, left: 0 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.1)" />
-                <XAxis type="number" dataKey="x" name="Share of Voice"
-                  domain={[0, "dataMax + 5"]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
-                  tickFormatter={(t: any) => `${t}%`}
-                  label={{ value: "Share of Voice (%)", position: "insideBottom", offset: -8, fontSize: 11, fill: "#B9C2BC" }} />
-                <YAxis type="number" dataKey="y" name="Sentiment"
-                  domain={[0, 100]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
-                  tickFormatter={(t: any) => `${t}%`}
-                  label={{ value: "Sentiment Score (%)", angle: -90, position: "insideLeft", fontSize: 11, fill: "#B9C2BC" }} />
-                <ZAxis type="number" dataKey="z" range={[120, 1400]} name="size" />
-                <Tooltip cursor={{ strokeDasharray: "3 3" }}
-                  contentStyle={{ background: "#0c0f0d", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8 }}
-                  labelStyle={{ color: "#ffffff" }}
-                  itemStyle={{ color: "#ffffff" }}
-                  formatter={(v: any, n: any) => {
-                    if (n === "size") return [null, null]; // hide internal bubble-size value
-                    return [`${v}%`, n];
-                  }} />
-                <Scatter data={bubbleData} name="Brand">
-                  {bubbleData.map((b, i) => (
-                    <Cell key={i} fill={b.fill} fillOpacity={0.65} />
-                  ))}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
+          <AiResponsesDashboard data={data.aiResponses} bare />
         </div>
       </div>
 

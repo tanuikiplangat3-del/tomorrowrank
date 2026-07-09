@@ -2,8 +2,6 @@
 // Fetches the page + auxiliary files and extracts signals using regex/string
 // parsing (no heavy DOM dep — keeps the serverless bundle small).
 
-import { CORE_FIELDS_EXTRACT_RULES, parseCoreFieldsResponse, type CoreFieldsExtraction } from "@/lib/providers/scrapingbee-extras";
-
 export interface PageSignals {
   finalUrl: string;
   status: number;
@@ -78,19 +76,13 @@ export function scrapingBeeConfigured(): boolean {
   return !!process.env.SCRAPINGBEE_API_KEY;
 }
 
-async function scrapingBeeFetch(url: string, mode: "basic" | "premium" | "stealth" = "basic", timeoutMs = 15_000): Promise<{ status: number; html: string; finalUrl: string; coreFields?: CoreFieldsExtraction } | null> {
+async function scrapingBeeFetch(url: string, mode: "basic" | "premium" | "stealth" = "basic", timeoutMs = 15_000): Promise<{ status: number; html: string; finalUrl: string } | null> {
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
   const params = new URLSearchParams({
     api_key: key,
     url,
     render_js: "true",
-    // Same page fetch, no extra call/cost: also ask ScrapingBee to pull
-    // title/meta description/H1 via CSS selectors against its own rendered
-    // DOM — more reliable than our regex parse for pages that already need
-    // ScrapingBee anyway. See lib/providers/scrapingbee-extras.ts.
-    json_response: "true",
-    extract_rules: CORE_FIELDS_EXTRACT_RULES,
   });
   if (mode === "premium") params.set("premium_proxy", "true");
   if (mode === "stealth") {
@@ -107,16 +99,12 @@ async function scrapingBeeFetch(url: string, mode: "basic" | "premium" | "stealt
     const res = await fetch(`https://app.scrapingbee.com/api/v1/?${params.toString()}`, {
       signal: AbortSignal.timeout(clientTimeout),
     });
-    const raw = await res.text();
+    const html = await res.text();
     if (!res.ok) {
-      console.error(`[scrapingbee] ${mode} failed for ${url}: HTTP ${res.status} ${raw.slice(0, 160)}`);
+      console.error(`[scrapingbee] ${mode} failed for ${url}: HTTP ${res.status} ${html.slice(0, 160)}`);
       return null;
     }
-    let parsed: any = null;
-    try { parsed = JSON.parse(raw); } catch { /* not JSON — treat as plain HTML below */ }
-    const coreFields = parseCoreFieldsResponse(parsed) ?? undefined;
-    const html = coreFields?.html ?? raw;
-    return { status: 200, html, finalUrl: url, coreFields };
+    return { status: 200, html, finalUrl: url };
   } catch (e: any) {
     console.error(`[scrapingbee] ${mode} threw for ${url}: ${e?.message ?? e}`);
     return null;
@@ -245,20 +233,17 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   //    to the strongest mode (stealth) — skipping the slow premium middle step so
   //    the homepage fetch stays fast (~30s worst case, not ~70s).
   let wasProtected = false;
-  let coreFieldOverrides: CoreFieldsExtraction | undefined;
   if (scrapingBeeConfigured() && looksBlocked(status, html)) {
     wasProtected = true;
     const mode = (process.env.SCRAPINGBEE_PROXY_MODE as "premium" | "stealth") || "stealth";
     const basic = await scrapingBeeFetch(url, "basic", 12_000);
     if (basic && !looksBlocked(basic.status, basic.html)) {
       ({ status, html, finalUrl } = basic);
-      coreFieldOverrides = basic.coreFields;
       renderedVia = "scrapingbee";
     } else {
       const strong = await scrapingBeeFetch(url, mode, 22_000);
       if (strong && !looksBlocked(strong.status, strong.html)) {
         ({ status, html, finalUrl } = strong);
-        coreFieldOverrides = strong.coreFields;
         renderedVia = `scrapingbee-${mode}`;
       }
     }
@@ -273,7 +258,6 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
     const rendered = await scrapingBeeFetch(url, "basic", 15_000);
     if (rendered && !looksLikeJsShell(rendered.status, rendered.html)) {
       ({ status, html, finalUrl } = rendered);
-      coreFieldOverrides = rendered.coreFields;
       renderedVia = "scrapingbee-render";
     }
   }
@@ -285,11 +269,9 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
 
   const lower = html.toLowerCase();
 
-  const h1 = coreFieldOverrides?.h1s !== undefined
-    ? coreFieldOverrides.h1s
-    : [...html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)].map((m) =>
-        stripTags(m[1])
-      );
+  const h1 = [...html.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)].map((m) =>
+    stripTags(m[1])
+  );
   const h2 = [...html.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)].map((m) =>
     stripTags(m[1])
   );
@@ -348,12 +330,8 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   const metas = tagsOf(html, "meta");
   const linkTags = tagsOf(html, "link");
   const rawTitle = textBetween(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = coreFieldOverrides?.title !== undefined
-    ? coreFieldOverrides.title
-    : (rawTitle ? decodeEntities(stripTags(rawTitle)) || null : null);
-  const metaDescription = coreFieldOverrides?.metaDescription !== undefined
-    ? coreFieldOverrides.metaDescription
-    : metaContent(metas, (k) => k === "description");
+  const title = rawTitle ? decodeEntities(stripTags(rawTitle)) || null : null;
+  const metaDescription = metaContent(metas, (k) => k === "description");
   const canonical =
     linkTags.find((a) => (a.rel ?? "").toLowerCase().split(/\s+/).includes("canonical"))
       ?.href ?? null;

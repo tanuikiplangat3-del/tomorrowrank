@@ -49,16 +49,20 @@ Page text (truncated):
 
 Return JSON: {"llmReadableScore": <0-100 how cleanly an LLM can parse this content>, "authoritySignals": [<short strings: e.g. "author bylines","client logos","case studies","credentials">], "summary": "<one sentence>"}`,
       maxTokens: 600,
+      timeoutMs: 20_000,
     });
   } catch {
     /* keep defaults */
   }
 
-  // AI Overview citation probe via Claude + web search.
-  const citations: AiOverviewCitation[] = [];
-  for (const q of probeQueries.slice(0, 3)) {
-    try {
-      const r = await claudeJSON<{ cited: boolean; competitors: string[] }>({
+  // AI Overview citation probe via Claude + web search. Run all probes in
+  // PARALLEL (was a sequential for-loop — up to 3x the per-call time for no
+  // reason, since these are fully independent of each other) with an explicit
+  // timeout per call so one slow probe can't hold up the whole audit.
+  const probes = probeQueries.slice(0, 3);
+  const results = await Promise.allSettled(
+    probes.map((q) =>
+      claudeJSON<{ cited: boolean; competitors: string[] }>({
         model: MODELS.fast,
         system:
           "You check whether a brand is likely to appear in Google's AI Overview / top organic results for a query. Use web search to inform your answer.",
@@ -67,16 +71,17 @@ Brand/domain to check: ${brand}
 Return JSON: {"cited": <true if ${brand} appears in or would plausibly be cited by AI Overviews / top results for this query>, "competitors": [<up to 5 domains that DO appear>]}`,
         maxTokens: 400,
         webSearch: true,
-      });
-      citations.push({
-        query: q,
-        cited: !!r.cited,
-        competitorsCited: (r.competitors ?? []).slice(0, 5),
-      });
-    } catch {
-      citations.push({ query: q, cited: false, competitorsCited: [] });
+        timeoutMs: 20_000,
+      })
+    )
+  );
+  const citations: AiOverviewCitation[] = probes.map((q, i) => {
+    const r = results[i];
+    if (r.status === "fulfilled") {
+      return { query: q, cited: !!r.value.cited, competitorsCited: (r.value.competitors ?? []).slice(0, 5) };
     }
-  }
+    return { query: q, cited: false, competitorsCited: [] };
+  });
 
   return {
     llmReadableScore: judged.llmReadableScore,

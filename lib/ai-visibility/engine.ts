@@ -25,6 +25,7 @@ import {
   chatGptAnswers,
   geminiAnswers,
   perplexityAnswers,
+  claudeAnswersDfs,
 } from "@/lib/providers/dataforseo-ai";
 import { resolveLocation } from "@/lib/locations";
 import { getPreviousSnapshot, saveSnapshot, type Snapshot } from "@/lib/store/aivisibility-history";
@@ -59,6 +60,14 @@ Visitor's country (for reference only — the brand may serve a wider area): ${c
 Homepage text (truncated): """${pageText.slice(0, 6000)}"""
 
 Determine the brand's real market scope from what the site actually says about who it serves. If the site positions itself continent- or region-wide (e.g. "we help brands across Africa"), the scope is that region, NOT the visitor's single country. If it clearly serves one country or city, use that.
+
+The ${PROMPT_COUNT} prompts must NOT all be the same shape (e.g. don't make every one a "best X in Y" question) — cover a genuine MIX of how real buyers actually search, across these archetypes:
+- a direct/brand-adjacent question (naming the category, not the brand)
+- a comparison question ("X vs Y", "which is better for...")
+- a "best/top" list question
+- a "how to" / how-does-it-work question
+- a "where to find / who offers" question
+Pick a sensible mix across these for the ${PROMPT_COUNT} prompts (not necessarily one of each if ${PROMPT_COUNT} isn't a clean multiple) — the goal is realistic variety, not five near-identical "best agency" phrasings.
 
 Return JSON:
 {
@@ -267,9 +276,10 @@ async function buildAiResponsesDashboard(args: {
   chatGpt: { prompt: string; answer: string }[];
   gemini: { prompt: string; answer: string }[];
   perplexity: { prompt: string; answer: string }[];
+  claude: { prompt: string; answer: string }[];
   aiOverview: { present: boolean; citedDomains: string[]; references: { domain: string; url: string; title: string }[] };
 }): Promise<AiVisibilityReport["aiResponses"]> {
-  const { domain, brandStem, promptCount, chatGpt, gemini, perplexity, aiOverview } = args;
+  const { domain, brandStem, promptCount, chatGpt, gemini, perplexity, claude, aiOverview } = args;
 
   const countMentions = (answers: { answer: string }[]) =>
     answers.filter((a) => (a.answer || "").toLowerCase().includes(brandStem)).length;
@@ -284,6 +294,7 @@ async function buildAiResponsesDashboard(args: {
     "AI Mode": { responses: aiOverview.present ? (aiOverviewPages > 0 ? 1 : 0) : 0, pages: aiOverviewPages },
     "Gemini": { responses: countMentions(gemini), pages: null },
     "Perplexity": { responses: countMentions(perplexity), pages: null },
+    "Claude": { responses: countMentions(claude), pages: null },
   };
 
   let previous: Snapshot | null = null;
@@ -298,7 +309,7 @@ async function buildAiResponsesDashboard(args: {
     now == null || prev == null ? null : now - prev;
 
   const platforms: AiPlatformStat[] = [
-    ...(["AI Overviews", "ChatGPT", "AI Mode", "Gemini", "Perplexity"] as const).map((platform) => ({
+    ...(["AI Overviews", "ChatGPT", "AI Mode", "Gemini", "Perplexity", "Claude"] as const).map((platform) => ({
       platform,
       responses: current[platform].responses,
       responsesOf: promptCount,
@@ -348,11 +359,12 @@ async function runWithDataForSeo(
   //    where each model supports it. Running all three in parallel instead of
   //    sequentially keeps this step's wall-clock time roughly the same as
   //    ChatGPT alone.
-  onStage?.("Asking ChatGPT, Gemini & Perplexity what they recommend", 30);
-  const [gptAnswers, geminiRes, perplexityRes] = await Promise.all([
+  onStage?.("Asking ChatGPT, Gemini, Perplexity & Claude what they recommend", 30);
+  const [gptAnswers, geminiRes, perplexityRes, claudeRes] = await Promise.all([
     chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }),
     geminiAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
-    perplexityAnswers(ctx.prompts.slice(0, PROMPT_COUNT)).catch(() => []),
+    perplexityAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
+    claudeAnswersDfs(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
   ]);
 
   // 3. FEATURE A — check the real Google AI Overview for the brand's category,
@@ -394,6 +406,7 @@ async function runWithDataForSeo(
     chatGpt: gptAnswers,
     gemini: geminiRes,
     perplexity: perplexityRes,
+    claude: claudeRes,
     aiOverview,
   });
 
@@ -434,6 +447,7 @@ async function runWithDataForSeo(
       "ChatGPT (DataForSEO)",
       "Gemini (DataForSEO)",
       "Perplexity (DataForSEO)",
+      "Claude (DataForSEO)",
       "Google AI Overview (DataForSEO)",
     ],
     citations,
