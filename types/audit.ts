@@ -75,6 +75,37 @@ export interface TopPageByBacklinks { url: string; backlinks: number; }
 export interface TopAnchor { anchor: string; backlinks: number; }
 export interface ReferringGeography { country: string; count: number; }
 
+// Keywords the domain already shows up for (position 4-50) but hasn't broken
+// into the top 3 yet — the closest, highest-value wins rather than a blind
+// "keyword ideas" list.
+export interface KeywordOpportunity {
+  keyword: string;
+  position: number;
+  searchVolume: number | null;
+  difficulty: number | null;
+  url?: string;
+}
+
+// A domain that links to a competitor but not to the audited site — a
+// concrete outreach target, not just a number.
+export interface LinkGapDomain {
+  domain: string;
+  domainRating: number | null;
+  linksToCompetitor: string; // which competitor domain it links to
+}
+
+// Live follower/engagement numbers for a discovered social profile — replaces
+// "does an og:tag/link exist" with real, current numbers where the platform
+// makes them publicly visible.
+export interface SocialProfile {
+  platform: "Facebook" | "X (Twitter)" | "Instagram" | "LinkedIn" | "YouTube";
+  url: string;
+  followers: number | null;
+  engagement: number | null;
+  handle: string | null;
+  available: boolean; // false = profile found on the site, but platform hid the numbers publicly
+}
+
 export interface PageSpeedReport {
   strategy: "mobile" | "desktop";
   performanceScore: number | null;  // 0..100
@@ -125,6 +156,24 @@ export interface VisibilityInsight {
   link: { label: string; href: string };
 }
 
+// ---- AI Responses dashboard (multi-LLM mention tracking, screenshot-style) ----
+export interface AiPlatformStat {
+  platform: "AI Overviews" | "ChatGPT" | "AI Mode" | "Gemini" | "Perplexity" | "Copilot" | "Grok";
+  responses: number | null;      // how many of the tracked prompts mentioned/cited the brand
+  responsesOf: number | null;    // out of how many prompts were tracked
+  responsesDelta: number | null; // vs the previous audit of this domain; null = no prior data
+  pages: number | null;          // distinct site pages cited — only populated where the platform's
+                                  // API returns real citation URLs (not fabricated for text-only answers)
+  pagesDelta: number | null;
+  available: boolean;            // false = platform not reachable via any connected API (e.g. Copilot, Grok)
+  note?: string;
+}
+
+export interface AiResponsesDashboard {
+  platforms: AiPlatformStat[];
+  comparedToPrevious: boolean; // false on a domain's first-ever audit — deltas are then all null
+}
+
 export interface AiVisibilityReport {
   clientBrand: string;
   competitors: string[];       // auto-discovered
@@ -141,6 +190,7 @@ export interface AiVisibilityReport {
   modelsQueried: string[];     // which LLMs were polled
   citations?: { url: string; title: string; brandCited?: boolean }[]; // sources Claude cited via web search
   probes?: { engine: string; prompt: string; answer: string; brandCited: boolean }[]; // raw Q&A behind the insights
+  aiResponses?: AiResponsesDashboard;
 }
 
 // ---- Multi-page crawl / clickable issues ----
@@ -180,6 +230,7 @@ export interface AuditMeta {
   language: string;            // e.g. "English"
   languageCode: string;        // e.g. "en"
   targetKeyword?: string;
+  competitorUrl?: string;
   screenshotDesktop?: string;  // data URL or hosted
   screenshotMobile?: string;
   fetchedAt: string;
@@ -193,22 +244,55 @@ export interface Recommendation {
   detail?: string;
 }
 
+// ---- Broader SERP snapshot (DataForSEO real Google SERP for the target/top keyword) ----
+export interface SerpSnapshot {
+  keyword: string;
+  searchVolume: number | null;   // real Google Ads volume, not Ahrefs' estimate
+  cpc: number | null;            // USD
+  yourPosition: number | null;   // null = not found in the checked results
+  hasFeaturedSnippet: boolean;
+  featuredSnippetIsYours: boolean;
+  hasPeopleAlsoAsk: boolean;
+  hasKnowledgePanel: boolean;
+  topResults: { position: number; domain: string; title: string }[];
+}
+
+// ---- Local business presence (DataForSEO Business Data API) ----
+export interface LocalBusinessProfile {
+  checked: boolean;      // false = lookup wasn't attempted (e.g. API not configured)
+  found: boolean;
+  name?: string;
+  rating?: number | null;
+  reviewCount?: number | null;
+  category?: string | null;
+  issue?: { title: string; recommendation: string; reason: string }; // populated when !found
+}
+
 export interface AuditReport {
   meta: AuditMeta;
   overall: { grade: Grade; score: number; summary: string; recommendationCount: number };
   categories: CategoryScore[];
   checks: CheckResult[];
   recommendations: Recommendation[];
-  keywords: { organic: KeywordRanking[]; paid: KeywordRanking[]; trafficFromSearch: number | null };
+  keywords: {
+    organic: KeywordRanking[];
+    paid: KeywordRanking[];
+    trafficFromSearch: number | null;
+    opportunities: KeywordOpportunity[]; // ranking 4-50, not yet top-3 — closest wins
+  };
   backlinks: {
     summary: BacklinkSummary;
     top: Backlink[];
     topPages: TopPageByBacklinks[];
     topAnchors: TopAnchor[];
     geographies: ReferringGeography[];
+    linkGap: { competitor: string | null; domains: LinkGapDomain[] }; // sites linking to a competitor, not you
   };
   performance: { mobile: PageSpeedReport; desktop: PageSpeedReport };
   geo: GeoReport;
+  social: SocialProfile[]; // live follower/engagement numbers, where publicly visible
+  serpSnapshot?: SerpSnapshot;       // real Google SERP for the target/top-opportunity keyword
+  localBusiness?: LocalBusinessProfile; // Google Business Profile check
   siteIssues?: SiteIssue[];   // multi-page crawl findings (clickable drill-down)
   crawlMeta?: CrawlMeta;
 }
@@ -222,7 +306,7 @@ export interface AuditJob {
   status: JobStatus;
   stage: string;               // human-readable current stage
   progress: number;            // 0..100
-  input: { url: string; country: string; language: string; targetKeyword?: string; internal?: boolean };
+  input: { url: string; country: string; language: string; targetKeyword?: string; competitorUrl?: string; internal?: boolean };
   report?: AuditReport;
   aiVisibility?: AiVisibilityReport;
   error?: string;

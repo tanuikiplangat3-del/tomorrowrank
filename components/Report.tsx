@@ -1,6 +1,6 @@
 "use client";
 // components/Report.tsx
-import type { AuditReport, AiVisibilityReport, CheckResult } from "@/types/audit";
+import type { AuditReport, AiVisibilityReport, CheckResult, SocialProfile } from "@/types/audit";
 import { GradeGauge, CategoryRadar, PriorityBadge, CategoryTag } from "./Primitives";
 import { AiVisibilitySection } from "./AiVisibility";
 import { SiteIssues } from "./SiteIssues";
@@ -38,6 +38,7 @@ export function Report({
           Target: <span className="font-semibold text-wtgreen">{report.meta.country}</span> ·{" "}
           <span className="font-semibold text-wtgreen">{report.meta.language}</span>
           {report.meta.targetKeyword && <> · Keyword: <span className="font-semibold text-paper">{report.meta.targetKeyword}</span></>}
+          {report.meta.competitorUrl && <> · Compared against: <span className="font-semibold text-paper">{report.meta.competitorUrl}</span></>}
         </p>
       </header>
 
@@ -63,6 +64,19 @@ export function Report({
         </div>
       </section>
 
+      {/* Homepage screenshot — a real visual of what was audited */}
+      {report.meta.screenshotDesktop && (
+        <section className={`mt-6 ${CARD}`}>
+          <h3 className="font-display text-lg font-bold text-paper">Homepage Snapshot</h3>
+          <p className="mt-1 text-sm text-muted">What {prettyHost(report.meta.finalUrl)} looked like at the time of this audit.</p>
+          <img
+            src={report.meta.screenshotDesktop}
+            alt={`Homepage screenshot of ${prettyHost(report.meta.finalUrl)}`}
+            className="mt-4 w-full rounded-lg border border-white/10"
+          />
+        </section>
+      )}
+
       {/* Issues found */}
       <section className={`mt-6 ${CARD}`}>
         <h2 className="font-display text-xl font-bold text-paper">Issues Found</h2>
@@ -78,6 +92,29 @@ export function Report({
           )}
         </div>
       </section>
+
+      {/* Local Business Profile — framed as an issue when not found, not left empty */}
+      {report.localBusiness?.checked && (
+        <section className={`mt-6 ${CARD}`}>
+          <h2 className="font-display text-xl font-bold text-paper">Local Business Profile</h2>
+          {report.localBusiness.found ? (
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <Stat label="Rating" value={report.localBusiness.rating ?? "—"} />
+              <Stat label="Reviews" value={report.localBusiness.reviewCount ?? "—"} />
+              <Stat label="Category" value={report.localBusiness.category ?? "—"} />
+            </div>
+          ) : (
+            <div className="mt-3 flex items-start gap-3 rounded-lg border border-bad/30 bg-bad/10 p-4">
+              <span className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-bad" />
+              <div>
+                <p className="font-semibold text-paper">{report.localBusiness.issue!.title}</p>
+                <p className="mt-1 text-sm text-wtgreen">→ {report.localBusiness.issue!.recommendation}</p>
+                <p className="mt-1 text-sm text-muted">{report.localBusiness.issue!.reason}</p>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Multi-page crawl: clickable site issues */}
       {report.siteIssues && report.siteIssues.length > 0 && (
@@ -101,6 +138,9 @@ export function Report({
       {/* Keyword rankings / backlinks / performance */}
       <DetailGrid report={report} />
 
+      {/* Social Media Presence — live follower/engagement numbers where public */}
+      <SocialSection profiles={report.social ?? []} />
+
       {/* AI Visibility */}
       {ai && <AiVisibilitySection data={ai} />}
 
@@ -116,6 +156,54 @@ export function Report({
       </section>
     </div>
     </GateContext.Provider>
+  );
+}
+
+const PLATFORM_ICON: Record<SocialProfile["platform"], string> = {
+  Facebook: "📘",
+  "X (Twitter)": "✖️",
+  Instagram: "📸",
+  LinkedIn: "💼",
+  YouTube: "▶️",
+};
+
+function SocialSection({ profiles }: { profiles: SocialProfile[] }) {
+  return (
+    <section className={`mt-6 ${CARD}`}>
+      <h2 className="font-display text-xl font-bold text-paper">Social Media Presence</h2>
+      <p className="mt-1 text-sm text-muted">
+        Live follower and engagement numbers for the social profiles linked from this site, where the platform
+        makes them publicly visible.
+      </p>
+      {profiles.length === 0 ? (
+        <p className="mt-4 text-sm text-muted">
+          No linked social profiles were found on the site. Adding links to active social accounts helps visitors
+          (and AI engines) verify the business is real and active.
+        </p>
+      ) : (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {profiles.map((p, i) => (
+            <div key={i} className="rounded-lg border border-white/10 bg-white/[0.02] p-4">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{PLATFORM_ICON[p.platform]}</span>
+                <span className="font-display font-bold text-paper">{p.platform}</span>
+              </div>
+              {p.handle && <p className="mt-1 truncate text-xs text-muted">{p.handle}</p>}
+              {p.available ? (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Stat label="Followers" value={p.followers} />
+                  <Stat label="Last post engagement" value={p.engagement} />
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-muted">
+                  Profile linked, but this platform doesn&apos;t show follower/engagement numbers publicly.
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -170,6 +258,75 @@ function DetailGrid({ report }: { report: AuditReport }) {
         </table>
       </div>
 
+      {/* Keyword Opportunities — page 1 bottom half through page 5, not yet top-3 */}
+      <div className={CARD}>
+        <h3 className="font-display text-lg font-bold text-paper">Keyword Opportunities</h3>
+        <p className="mt-1 text-sm text-muted">
+          Already visible to Google at positions 4–50 — the closest, highest-volume pushes to page 1.
+        </p>
+        <table className="mt-3 w-full text-sm">
+          <thead className="text-left text-xs uppercase tracking-wide text-muted">
+            <tr><th className="py-1">Keyword</th><th>Pos.</th><th>Volume</th><th>KD</th></tr>
+          </thead>
+          <tbody>
+            {keywords.opportunities.slice(0, 10).map((k, i) => (
+              <tr key={i} className="border-t border-white/10">
+                <td className="py-2 pr-2 text-paper">{k.keyword}</td>
+                <td className="font-semibold text-wtgreen">{k.position}</td>
+                <td className="text-muted">{k.searchVolume ?? "—"}</td>
+                <td className="text-muted">{k.difficulty ?? "—"}</td>
+              </tr>
+            ))}
+            {keywords.opportunities.length === 0 && (
+              <tr><td colSpan={4} className="py-4 text-muted">No near-miss keywords found (either already top-3 for most terms, or no page-2-5 rankings detected).</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* SERP Snapshot — real Google result for the target/top-opportunity keyword */}
+      {report.serpSnapshot && (
+        <div className={CARD}>
+          <h3 className="font-display text-lg font-bold text-paper">SERP Snapshot</h3>
+          <p className="mt-1 text-sm text-muted">
+            Real Google result right now for <span className="font-semibold text-paper">&ldquo;{report.serpSnapshot.keyword}&rdquo;</span>.
+          </p>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <Stat label="Your Position" value={report.serpSnapshot.yourPosition ?? "Not in top 10"} />
+            <Stat label="Search Volume" value={report.serpSnapshot.searchVolume} />
+            <Stat label="CPC (USD)" value={report.serpSnapshot.cpc} />
+          </div>
+          <ul className="mt-4 space-y-1.5 text-sm">
+            <li className="flex justify-between">
+              <span className="text-muted">Featured snippet</span>
+              <span className={report.serpSnapshot.hasFeaturedSnippet ? (report.serpSnapshot.featuredSnippetIsYours ? "font-semibold text-good" : "font-semibold text-bad") : "text-muted"}>
+                {!report.serpSnapshot.hasFeaturedSnippet ? "None on this SERP" : report.serpSnapshot.featuredSnippetIsYours ? "Yours" : "A competitor holds it"}
+              </span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-muted">People Also Ask</span>
+              <span className="text-paper">{report.serpSnapshot.hasPeopleAlsoAsk ? "Present" : "Not present"}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-muted">Knowledge panel</span>
+              <span className="text-paper">{report.serpSnapshot.hasKnowledgePanel ? "Present" : "Not present"}</span>
+            </li>
+          </ul>
+          {report.serpSnapshot.topResults.length > 0 && (
+            <>
+              <h4 className="mt-4 text-sm font-bold text-paper">Top Results</h4>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {report.serpSnapshot.topResults.slice(0, 5).map((r, i) => (
+                  <li key={i} className="flex justify-between gap-2">
+                    <span className="truncate text-muted">#{r.position} {r.domain}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Backlinks */}
       <div className={CARD}>
         <h3 className="font-display text-lg font-bold text-paper">Backlink Profile</h3>
@@ -187,6 +344,27 @@ function DetailGrid({ report }: { report: AuditReport }) {
             </li>
           ))}
           {backlinks.top.length === 0 && <li className="text-muted">No backlinks found.</li>}
+        </ul>
+      </div>
+
+      {/* Link Gap — sites linking to a competitor but not to this domain */}
+      <div className={CARD}>
+        <h3 className="font-display text-lg font-bold text-paper">Link Gap</h3>
+        <p className="mt-1 text-sm text-muted">
+          {backlinks.linkGap.competitor
+            ? <>Sites linking to <span className="font-semibold text-paper">{backlinks.linkGap.competitor}</span> but not to this site — concrete outreach targets.</>
+            : "Add a competitor URL before running the audit to see this section."}
+        </p>
+        <ul className="mt-3 space-y-1.5 text-sm">
+          {backlinks.linkGap.domains.map((d, i) => (
+            <li key={i} className="flex justify-between gap-2">
+              <span className="truncate text-muted">{d.domain}</span>
+              <span className="font-semibold text-wtgreen">DR {d.domainRating ?? "—"}</span>
+            </li>
+          ))}
+          {backlinks.linkGap.competitor && backlinks.linkGap.domains.length === 0 && (
+            <li className="text-muted">No gap found — this site already has links from most of the competitor's referring domains.</li>
+          )}
         </ul>
       </div>
 

@@ -10,6 +10,7 @@ import type {
   AiVisibilityReport,
   BrandShare,
   VisibilityInsight,
+  AiPlatformStat,
 } from "@/types/audit";
 import {
   claudeJSON,
@@ -22,8 +23,11 @@ import {
   dataForSeoConfigured,
   googleAiOverview,
   chatGptAnswers,
+  geminiAnswers,
+  perplexityAnswers,
 } from "@/lib/providers/dataforseo-ai";
 import { resolveLocation } from "@/lib/locations";
+import { getPreviousSnapshot, saveSnapshot, type Snapshot } from "@/lib/store/aivisibility-history";
 
 interface BrandContext {
   brand: string;
@@ -236,6 +240,93 @@ Return JSON:
 }
 
 // ============================================================
+// AI RESPONSES DASHBOARD — mention-count tracking across platforms, styled
+// like the screenshot (AI Overviews / ChatGPT / AI Mode / Gemini / Perplexity
+// / Copilot / Grok, each with a Responses + Pages count and a delta vs the
+// domain's previous audit).
+//
+// Honesty notes, deliberately kept rather than smoothed over:
+//  - "Responses" = how many of the tracked prompts mentioned the brand. Real
+//    and computable for every text-answer platform (ChatGPT/Gemini/Perplexity).
+//  - "Pages" = distinct site pages CITED with a real URL. Only Google AI
+//    Overview/AI Mode returns structured citation URLs on this integration;
+//    ChatGPT/Gemini/Perplexity return conversational text with no confirmed,
+//    parseable citation-URL field, so their Pages column is left null (shown
+//    as "—") rather than guessed.
+//  - Copilot and Grok have no confirmed API path on any connected provider —
+//    marked unavailable rather than faked.
+//  - "AI Overviews" and "AI Mode" currently come from the SAME underlying
+//    DataForSEO call (serp/google/ai_mode/live/advanced) on this account —
+//    Google's classic AI Overview box and the newer full AI Mode experience
+//    aren't separately queryable here, so both rows reflect the same signal.
+// ============================================================
+async function buildAiResponsesDashboard(args: {
+  domain: string;
+  brandStem: string;
+  promptCount: number;
+  chatGpt: { prompt: string; answer: string }[];
+  gemini: { prompt: string; answer: string }[];
+  perplexity: { prompt: string; answer: string }[];
+  aiOverview: { present: boolean; citedDomains: string[]; references: { domain: string; url: string; title: string }[] };
+}): Promise<AiVisibilityReport["aiResponses"]> {
+  const { domain, brandStem, promptCount, chatGpt, gemini, perplexity, aiOverview } = args;
+
+  const countMentions = (answers: { answer: string }[]) =>
+    answers.filter((a) => (a.answer || "").toLowerCase().includes(brandStem)).length;
+
+  const aiOverviewPages = aiOverview.present
+    ? new Set(aiOverview.references.filter((r) => r.domain.includes(brandStem)).map((r) => r.url)).size
+    : 0;
+
+  const current: Snapshot = {
+    "AI Overviews": { responses: aiOverview.present ? (aiOverviewPages > 0 ? 1 : 0) : 0, pages: aiOverviewPages },
+    "ChatGPT": { responses: countMentions(chatGpt), pages: null },
+    "AI Mode": { responses: aiOverview.present ? (aiOverviewPages > 0 ? 1 : 0) : 0, pages: aiOverviewPages },
+    "Gemini": { responses: countMentions(gemini), pages: null },
+    "Perplexity": { responses: countMentions(perplexity), pages: null },
+  };
+
+  let previous: Snapshot | null = null;
+  try {
+    previous = await getPreviousSnapshot(domain);
+    await saveSnapshot(domain, current);
+  } catch {
+    /* best-effort — a history read/write failure shouldn't break the audit */
+  }
+
+  const delta = (now: number | null, prev: number | null | undefined) =>
+    now == null || prev == null ? null : now - prev;
+
+  const platforms: AiPlatformStat[] = [
+    ...(["AI Overviews", "ChatGPT", "AI Mode", "Gemini", "Perplexity"] as const).map((platform) => ({
+      platform,
+      responses: current[platform].responses,
+      responsesOf: promptCount,
+      responsesDelta: delta(current[platform].responses, previous?.[platform]?.responses),
+      pages: current[platform].pages,
+      pagesDelta: delta(current[platform].pages, previous?.[platform]?.pages),
+      available: true,
+    })),
+    {
+      platform: "Copilot" as const,
+      responses: null, responsesOf: null, responsesDelta: null,
+      pages: null, pagesDelta: null,
+      available: false,
+      note: "Not available — no API access to Copilot from any connected provider.",
+    },
+    {
+      platform: "Grok" as const,
+      responses: null, responsesOf: null, responsesDelta: null,
+      pages: null, pagesDelta: null,
+      available: false,
+      note: "Not available — no API access to Grok from any connected provider.",
+    },
+  ];
+
+  return { platforms, comparedToPrevious: !!previous };
+}
+
+// ============================================================
 // PRIMARY PATH: DataForSEO — real ChatGPT answers + real Google AI Overview
 // (uses the endpoints verified on this account, not the llm_mentions tier).
 // ============================================================
@@ -252,16 +343,23 @@ async function runWithDataForSeo(
   onStage?.("Mapping your market & competitors", 10);
   const ctx = await deriveContext(brand, country, pageText);
 
-  // 2. FEATURE B — ask ChatGPT the real buyer-intent prompts (via DataForSEO),
-  //    grounding ChatGPT's web search to the AUDITED country (not the US default).
-  onStage?.("Asking ChatGPT what it recommends", 35);
-  const gptAnswers = await chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso });
+  // 2. FEATURE B — ask ChatGPT, Gemini AND Perplexity the same real buyer-intent
+  //    prompts (via DataForSEO), grounding web search to the AUDITED country
+  //    where each model supports it. Running all three in parallel instead of
+  //    sequentially keeps this step's wall-clock time roughly the same as
+  //    ChatGPT alone.
+  onStage?.("Asking ChatGPT, Gemini & Perplexity what they recommend", 30);
+  const [gptAnswers, geminiRes, perplexityRes] = await Promise.all([
+    chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }),
+    geminiAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
+    perplexityAnswers(ctx.prompts.slice(0, PROMPT_COUNT)).catch(() => []),
+  ]);
 
   // 3. FEATURE A — check the real Google AI Overview for the brand's category,
   //    but ONLY when we have the audited country's real DataForSEO location code.
   //    We never fall back to USA — showing US AI-Overview data for a non-US audit
   //    would be misleading, so we skip it instead.
-  onStage?.("Reading Google AI Overview citations", 60);
+  onStage?.("Reading Google AI Overview citations", 55);
   let aiOverview: Awaited<ReturnType<typeof googleAiOverview>> = {
     present: false, citedDomains: [], references: [],
   };
@@ -275,7 +373,9 @@ async function runWithDataForSeo(
     console.warn(`[ai-visibility] no DataForSEO location code for "${country}" — skipping AI Overview to avoid wrong-country data.`);
   }
 
-  // 4. Probes from the REAL ChatGPT answers.
+  // 4. Probes from the REAL ChatGPT answers (Gemini/Perplexity feed the AI
+  //    Responses dashboard below, but keep the existing insight-drilldown
+  //    focused on ChatGPT so its shape/behaviour doesn't change).
   const brandStem = brand.toLowerCase().split(".")[0];
   const probes = gptAnswers.map((a) => ({
     engine: "ChatGPT",
@@ -283,6 +383,19 @@ async function runWithDataForSeo(
     answer: (a.answer || "").slice(0, 600),
     brandCited: (a.answer || "").toLowerCase().includes(brandStem),
   }));
+
+  // 4b. AI Responses dashboard — mention counts per platform, with deltas vs
+  // this domain's previous audit. See lib/store/aivisibility-history.ts.
+  onStage?.("Building AI Responses dashboard", 68);
+  const aiResponses = await buildAiResponsesDashboard({
+    domain: brand,
+    brandStem,
+    promptCount: PROMPT_COUNT,
+    chatGpt: gptAnswers,
+    gemini: geminiRes,
+    perplexity: perplexityRes,
+    aiOverview,
+  });
 
   // 5. Citations = the real domains Google's AI Overview cited.
   const citations = aiOverview.references.slice(0, 30).map((r) => ({
@@ -317,9 +430,15 @@ async function runWithDataForSeo(
     overallSentiment: sentiment,
     headline: aiHeadline,
     insights,
-    modelsQueried: ["ChatGPT (DataForSEO)", "Google AI Overview (DataForSEO)"],
+    modelsQueried: [
+      "ChatGPT (DataForSEO)",
+      "Gemini (DataForSEO)",
+      "Perplexity (DataForSEO)",
+      "Google AI Overview (DataForSEO)",
+    ],
     citations,
     probes,
+    aiResponses,
   };
 }
 

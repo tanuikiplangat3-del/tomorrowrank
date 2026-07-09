@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import type { AiVisibilityReport } from "@/types/audit";
+import type { AiVisibilityReport, AiPlatformStat } from "@/types/audit";
 import { BlurGate } from "./Gate";
 
 // Green-led palette on the dark canvas; client brand is always wtgreen.
@@ -17,6 +17,108 @@ function colorFor(i: number, isClient: boolean) {
 }
 
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
+
+const PLATFORM_ICON: Record<AiPlatformStat["platform"], string> = {
+  "AI Overviews": "◆",
+  ChatGPT: "●",
+  "AI Mode": "G",
+  Gemini: "✦",
+  Perplexity: "◈",
+  Copilot: "◫",
+  Grok: "⨂",
+};
+
+function DeltaTag({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-muted">—</span>;
+  const sign = value > 0 ? "+" : "";
+  const color = value > 0 ? "text-good" : value < 0 ? "text-bad" : "text-muted";
+  return <span className={`font-semibold ${color}`}>{sign}{value}</span>;
+}
+
+function AiResponsesDashboard({ data }: { data: AiVisibilityReport["aiResponses"] }) {
+  if (!data) return null;
+  const [aiOverviews, chatgpt, ...rest] = data.platforms;
+  return (
+    <div className={`${CARD} mb-5`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="font-display text-lg font-bold text-paper">AI Responses</h3>
+        <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-muted">
+          {data.comparedToPrevious ? "vs your previous audit" : "first audit — no history yet"}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        Out of {chatgpt?.responsesOf ?? "—"} tracked buyer-intent prompts per platform. &ldquo;Pages&rdquo; = distinct
+        site pages cited with a real URL — only available where the platform returns structured citations.
+      </p>
+
+      {/* Top two headline platforms, like the reference dashboard */}
+      <div className="mt-5 grid gap-6 sm:grid-cols-2">
+        {[aiOverviews, chatgpt].filter(Boolean).map((p) => (
+          <div key={p.platform}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">{p.platform}</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-lg">{PLATFORM_ICON[p.platform]}</span>
+              <span className="font-display text-3xl font-extrabold text-paper">{p.responses ?? "—"}</span>
+              <DeltaTag value={p.responsesDelta} />
+            </div>
+            <p className="mt-1 text-sm text-muted">
+              Pages <span className="font-semibold text-paper">{p.pages ?? "—"}</span>{" "}
+              <DeltaTag value={p.pagesDelta} />
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Remaining platforms as a table */}
+      <table className="mt-6 w-full text-sm">
+        <thead className="text-left text-xs uppercase tracking-wide text-muted">
+          <tr>
+            <th className="py-1">Platform</th>
+            <th className="text-right">Responses</th>
+            <th className="text-right">Pages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rest.map((p) => (
+            <tr key={p.platform} className="border-t border-white/10">
+              <td className="py-2 text-paper">
+                <span className="mr-2">{PLATFORM_ICON[p.platform]}</span>
+                {p.platform}
+                {!p.available && <span className="ml-2 text-xs text-muted">(paused)</span>}
+              </td>
+              <td className="text-right">
+                {p.available ? (
+                  <>
+                    <span className="font-semibold text-wtgreen">{p.responses ?? "—"}</span>{" "}
+                    <DeltaTag value={p.responsesDelta} />
+                  </>
+                ) : (
+                  <span className="text-muted" title={p.note}>—</span>
+                )}
+              </td>
+              <td className="text-right">
+                {p.available ? (
+                  <>
+                    <span className="font-semibold text-wtgreen">{p.pages ?? "—"}</span>{" "}
+                    <DeltaTag value={p.pagesDelta} />
+                  </>
+                ) : (
+                  <span className="text-muted" title={p.note}>—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rest.some((p) => !p.available) && (
+        <p className="mt-3 text-xs text-muted">
+          Copilot and Grok aren&apos;t shown with real numbers — no API access to either platform is currently
+          connected, so we don&apos;t fabricate a count for them.
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
   const sov = data.shareOfVoice;
@@ -40,6 +142,9 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
           GEO / Generative Engine Optimization · {data.modelsQueried.join(" · ") || "Claude"}
         </span>
       </div>
+
+      {/* AI Responses — multi-platform mention tracking */}
+      <AiResponsesDashboard data={data.aiResponses} />
 
       {/* Row 1: Insights + Bubble */}
       <div className="grid gap-5 lg:grid-cols-2">

@@ -38,6 +38,7 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
   const [country, setCountry] = useState("Kenya");
   const [language, setLanguage] = useState("English");
   const [keyword, setKeyword] = useState("");
+  const [competitorUrl, setCompetitorUrl] = useState("");
   const [job, setJob] = useState<AuditJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
@@ -127,7 +128,7 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       const res = await fetch(apiPath("/api/audit/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, country, language, targetKeyword: keyword, internal }),
+        body: JSON.stringify({ url, country, language, targetKeyword: keyword, competitorUrl, internal }),
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to start audit");
@@ -138,7 +139,7 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       setError(e.message);
       setPhase("error");
     }
-  }, [url, country, language, keyword, internal, pollJob]);
+  }, [url, country, language, keyword, competitorUrl, internal, pollJob]);
 
   if (phase === "done" && job?.report) {
     return (
@@ -185,8 +186,8 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
             </button>
           </div>
 
-          {/* Country / language / keyword selectors */}
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          {/* Country / language / keyword / competitor selectors */}
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SearchableSelect label="Country" value={country} onChange={setCountry}
               options={COUNTRIES.map((c) => c.country)} placeholder="Search your country…" />
             <SearchableSelect label="Language" value={language} onChange={setLanguage}
@@ -199,19 +200,27 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
                 placeholder="e.g. growth agency"
                 className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
             </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
+                Competitor URL (optional)
+              </label>
+              <input value={competitorUrl} onChange={(e) => setCompetitorUrl(e.target.value)}
+                placeholder="e.g. competitor.com"
+                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
+            </div>
           </div>
 
           {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
         </div>
       ) : (
-        <Processing job={job} url={url} country={country} language={language} />
+        <Processing job={job} url={url} country={country} language={language} internal={internal} />
       )}
     </div>
   );
 }
 
-function Processing({ job, url, country, language }: {
-  job: AuditJob | null; url: string; country: string; language: string;
+function Processing({ job, url, country, language, internal }: {
+  job: AuditJob | null; url: string; country: string; language: string; internal?: boolean;
 }) {
   const progress = job?.progress ?? 0;
   const stage = job?.stage ?? "Starting";
@@ -237,15 +246,19 @@ function Processing({ job, url, country, language }: {
         <p className="mt-3 text-sm font-semibold text-paper">{stage}…</p>
         {waking && (
           <p className="mt-2 text-xs text-muted">
-            Waking the server (free tier can take up to ~1 min on first run) — then crawling up to 50 pages.
+            {internal
+              ? "Waking the server (free tier can take up to ~1 min on first run) — then a full crawl of up to 500 pages."
+              : "Waking the server (free tier can take up to ~1 min on first run) — then crawling your key pages."}
           </p>
         )}
       </div>
       <p className="mt-6 max-w-md text-muted">
         Wait as your site is being audited — auditing{" "}
         <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}</span>{" "}
-        can take up to 2–5 minutes for maximum output and correct results. Please don&apos;t cancel or close this
-        tab midway.
+        {internal
+          ? "can take up to 30 minutes for a full crawl of up to 500 pages and the most accurate results."
+          : "can take up to 3 minutes for the most accurate results."}{" "}
+        Please don&apos;t cancel or close this tab midway.
       </p>
     </div>
   );

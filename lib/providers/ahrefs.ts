@@ -165,3 +165,43 @@ export async function organicCompetitors(target: string, country: string, limit 
     return [];
   }
 }
+
+// ---------- KEYWORD OPPORTUNITIES ----------
+// Keywords the domain already shows up for at positions 4-50 (page 1 bottom
+// half through page 5) — visible to Google but not yet winning the click.
+// These are genuine "close but not there yet" wins, distinct from the
+// top-ranking keywords already surfaced by organicKeywords(). Reuses the same
+// organic-keywords endpoint with a `where` filter, so no new Ahrefs product
+// is needed — sorted by search volume so the highest-value gaps surface first.
+export async function keywordOpportunities(target: string, country: string, limit = 20) {
+  try {
+    const data = await get("/site-explorer/organic-keywords", {
+      target,
+      country: country.toUpperCase(),
+      select: "keyword,best_position,volume,keyword_difficulty,best_position_url",
+      where: JSON.stringify({
+        or: [
+          { field: "best_position_set", is: ["eq", "top_4_10"] },
+          { field: "best_position_set", is: ["eq", "top_11_50"] },
+        ],
+      }),
+      order_by: "volume:desc",
+      limit: String(limit),
+      date: today(),
+    });
+    let items = (data?.keywords ?? data?.items ?? []) as any[];
+    // Fall back to a client-side filter if the `where` filter shape above
+    // isn't accepted by this endpoint/plan — better a slightly-looser result
+    // than an empty section.
+    if (!items.length) {
+      const all = await organicKeywords(target, country, 100);
+      items = all.filter((it) => {
+        const p = it?.best_position;
+        return typeof p === "number" && p >= 4 && p <= 50;
+      });
+    }
+    return items;
+  } catch {
+    return [];
+  }
+}

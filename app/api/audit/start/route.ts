@@ -1,4 +1,4 @@
-// POST /api/audit/start  { url, country, language, targetKeyword? }
+// POST /api/audit/start  { url, country, language, targetKeyword?, competitorUrl? }
 // Creates a job, triggers the background runner, returns { jobId } immediately.
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
@@ -51,9 +51,9 @@ export async function POST(req: NextRequest) {
     // Hard deadline stored ON the job. Even if the container restarts mid-audit
     // (heavy sites can be memory-intensive) and the in-process watchdog dies, the
     // status endpoint uses this to report the job as timed-out instead of letting
-    // the UI spin forever. Internal ~3.5 min, external ~2 min (matches the
-    // orchestrator's budget cap + buffer).
-    const hardCapMs = (body.internal === true ? 180_000 : 120_000) + 30_000;
+    // the UI spin forever. Internal ~30.5 min (full crawl + all providers),
+    // external ~3.5 min (matches the orchestrator's budget cap + buffer).
+    const hardCapMs = (body.internal === true ? 1_800_000 : 180_000) + 30_000;
 
     const job: AuditJob = {
       id: randomUUID(),
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
         country: body.country || "Kenya",
         language: body.language || "English",
         targetKeyword: body.targetKeyword?.trim() || undefined,
+        competitorUrl: body.competitorUrl?.trim() || undefined,
         internal: body.internal === true,
       },
       createdAt: new Date().toISOString(),

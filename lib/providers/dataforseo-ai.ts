@@ -1,12 +1,21 @@
 // lib/providers/dataforseo-ai.ts
-// DataForSEO integration using the endpoints VERIFIED on this account:
-//   (A) SERP Google AI Mode (AI Overview) — serp/google/ai_mode/live/advanced
-//       ~"$0.004/call. Returns the AI Overview + the sources it cites.
-//   (B) ChatGPT LLM response — ai_optimization/chat_gpt/llm_responses/live
-//       ~$0.004/call. Returns the actual ChatGPT answer to a prompt.
+// DataForSEO integration. Endpoints used (all confirmed against DataForSEO's
+// v3 docs):
+//   (A) Google AI Mode / AI Overview — serp/google/ai_mode/live/advanced
+//   (B) ChatGPT LLM response  — ai_optimization/chat_gpt/llm_responses/live
+//   (C) Gemini LLM response   — ai_optimization/gemini/llm_responses/live
+//   (D) Perplexity LLM response — ai_optimization/perplexity/llm_responses/live
+//   (E) Google Organic SERP (broader snapshot: PAA, featured snippet, knowledge
+//       panel, real position) — serp/google/organic/live/advanced
+//   (F) Real Google Ads search volume — keywords_data/google_ads/search_volume/live
+//   (G) Google Business Profile lookup — business_data/google/my_business_info/live
+//
+// NOTE: Copilot and Grok are NOT available through DataForSEO (or any other API
+// wired into this project) as of this writing — there is no confirmed endpoint
+// for either. Rather than fabricate numbers, the AI Responses dashboard marks
+// both as unavailable. See lib/ai-visibility/engine.ts.
 //
 // Auth: HTTP Basic with login:password.
-// These replace the earlier llm_mentions endpoints (which needed a $100/mo tier).
 
 const BASE = "https://api.dataforseo.com/v3";
 
@@ -20,12 +29,12 @@ function authHeader(): string {
   return "Basic " + Buffer.from(`${login}:${password}`).toString("base64");
 }
 
-async function post<T = any>(path: string, body: unknown): Promise<T> {
+async function post<T = any>(path: string, body: unknown, timeoutMs = 35_000): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: authHeader() },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(35_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -127,4 +136,198 @@ export async function chatGptAnswers(
   return results
     .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
     .map((r) => r.value);
+}
+
+// ---------------------------------------------------------------------------
+// (C) GEMINI ANSWER — same shape as ChatGPT, different endpoint/model family.
+// Confirmed endpoint: ai_optimization/gemini/llm_responses/live.
+// ---------------------------------------------------------------------------
+export async function geminiAnswer(
+  prompt: string,
+  opts: { model?: string; countryIso?: string } = {}
+): Promise<ChatGptAnswer> {
+  const { model = "gemini-2.5-flash", countryIso } = opts;
+  const task: Record<string, unknown> = {
+    user_prompt: prompt,
+    model_name: model,
+    max_output_tokens: 1024,
+    web_search: true,
+    system_message: countryIso
+      ? `You are a helpful assistant answering for a user located in ${countryIso}. Give accurate, up-to-date information relevant to that market.`
+      : "You are a helpful assistant that provides accurate information.",
+  };
+  const data = await post("/ai_optimization/gemini/llm_responses/live", [task]);
+  const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+  let answer = "";
+  for (const it of items) {
+    if (it.type === "message") {
+      for (const sec of it.sections ?? []) {
+        if (sec.type === "text" && sec.text) answer += sec.text + "\n";
+      }
+    }
+  }
+  return { prompt, answer: answer.trim() };
+}
+
+export async function geminiAnswers(
+  prompts: string[],
+  opts: { countryIso?: string } = {}
+): Promise<ChatGptAnswer[]> {
+  const results = await Promise.allSettled(prompts.map((p) => geminiAnswer(p, opts)));
+  return results
+    .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
+    .map((r) => r.value);
+}
+
+// ---------------------------------------------------------------------------
+// (D) PERPLEXITY ANSWER — Sonar models have web search on by default (no
+// web_search flag needed/supported the same way as ChatGPT/Gemini/Claude).
+// Confirmed endpoint: ai_optimization/perplexity/llm_responses/live (Live
+// method only — Perplexity doesn't support Standard on this API).
+// ---------------------------------------------------------------------------
+export async function perplexityAnswer(
+  prompt: string,
+  opts: { model?: string } = {}
+): Promise<ChatGptAnswer> {
+  const { model = "sonar" } = opts;
+  const task: Record<string, unknown> = {
+    user_prompt: prompt,
+    model_name: model,
+    max_output_tokens: 1024,
+  };
+  const data = await post("/ai_optimization/perplexity/llm_responses/live", [task], 45_000);
+  const items = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+  let answer = "";
+  for (const it of items) {
+    if (it.type === "message") {
+      for (const sec of it.sections ?? []) {
+        if (sec.type === "text" && sec.text) answer += sec.text + "\n";
+      }
+    }
+  }
+  return { prompt, answer: answer.trim() };
+}
+
+export async function perplexityAnswers(prompts: string[]): Promise<ChatGptAnswer[]> {
+  const results = await Promise.allSettled(prompts.map((p) => perplexityAnswer(p)));
+  return results
+    .filter((r): r is PromiseFulfilledResult<ChatGptAnswer> => r.status === "fulfilled")
+    .map((r) => r.value);
+}
+
+// ---------------------------------------------------------------------------
+// (E) BROADER GOOGLE SERP SNAPSHOT — real organic position, People Also Ask,
+// featured snippet (and whether the audited domain holds it), and knowledge
+// panel presence, for one keyword. Confirmed endpoint:
+// serp/google/organic/live/advanced.
+// ---------------------------------------------------------------------------
+export interface GoogleSerpSnapshotRaw {
+  yourPosition: number | null;
+  hasFeaturedSnippet: boolean;
+  featuredSnippetIsYours: boolean;
+  hasPeopleAlsoAsk: boolean;
+  hasKnowledgePanel: boolean;
+  topResults: { position: number; domain: string; title: string }[];
+}
+
+export async function googleOrganicSerp(
+  keyword: string,
+  locationCode: number,
+  languageCode: string,
+  targetDomain: string
+): Promise<GoogleSerpSnapshotRaw> {
+  const data = await post("/serp/google/organic/live/advanced", [
+    { keyword, location_code: locationCode, language_code: languageCode, device: "desktop" },
+  ]);
+  const items: any[] = data?.tasks?.[0]?.result?.[0]?.items ?? [];
+  const host = targetDomain.replace(/^www\./, "").toLowerCase();
+
+  const organicItems = items.filter((it) => it.type === "organic");
+  const topResults = organicItems.slice(0, 10).map((it) => ({
+    position: it.rank_absolute ?? it.rank_group ?? 0,
+    domain: String(it.domain ?? "").toLowerCase(),
+    title: it.title ?? "",
+  }));
+  const yourResult = organicItems.find((it) => String(it.domain ?? "").toLowerCase().replace(/^www\./, "") === host);
+
+  const featuredSnippet = items.find((it) => it.type === "featured_snippet");
+  const featuredSnippetIsYours =
+    !!featuredSnippet &&
+    String(featuredSnippet.domain ?? "").toLowerCase().replace(/^www\./, "") === host;
+
+  return {
+    yourPosition: yourResult?.rank_absolute ?? yourResult?.rank_group ?? null,
+    hasFeaturedSnippet: !!featuredSnippet,
+    featuredSnippetIsYours,
+    hasPeopleAlsoAsk: items.some((it) => it.type === "people_also_ask"),
+    hasKnowledgePanel: items.some((it) => it.type === "knowledge_graph"),
+    topResults,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// (F) REAL GOOGLE ADS SEARCH VOLUME — actual advertiser-facing volume/CPC,
+// not Ahrefs' independently-modelled estimate. Confirmed endpoint:
+// keywords_data/google_ads/search_volume/live.
+// ---------------------------------------------------------------------------
+export async function googleAdsSearchVolume(
+  keywords: string[],
+  locationCode: number
+): Promise<{ keyword: string; searchVolume: number | null; cpc: number | null }[]> {
+  if (!keywords.length) return [];
+  try {
+    const data = await post("/keywords_data/google_ads/search_volume/live", [
+      { location_code: locationCode, keywords: keywords.slice(0, 20) },
+    ]);
+    const items: any[] = data?.tasks?.[0]?.result ?? [];
+    return items.map((it) => ({
+      keyword: it.keyword ?? "",
+      searchVolume: it.search_volume ?? null,
+      cpc: it.cpc ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// (G) GOOGLE BUSINESS PROFILE — does this business have a Google Business
+// Profile? Confirmed endpoint: business_data/google/my_business_info/live.
+// Best-effort by design: a location-code-only lookup (no street address) can
+// legitimately miss a real profile, so absence here means "not found with
+// this business name at this location" rather than a certain "does not exist".
+// ---------------------------------------------------------------------------
+export interface GoogleBusinessProfileRaw {
+  found: boolean;
+  name?: string;
+  rating?: number | null;
+  reviewCount?: number | null;
+  category?: string | null;
+}
+
+export async function googleBusinessProfile(
+  businessName: string,
+  locationCode: number,
+  languageCode = "en"
+): Promise<GoogleBusinessProfileRaw> {
+  try {
+    const data = await post("/business_data/google/my_business_info/live", [
+      { keyword: businessName, location_code: locationCode, language_code: languageCode },
+    ]);
+    const task = data?.tasks?.[0];
+    if (!task || task.status_code === 40102 /* No Search Results */) return { found: false };
+    const result = task.result?.[0];
+    if (!result || !result.items_count) return { found: false };
+    const item = result.items?.[0];
+    if (!item) return { found: false };
+    return {
+      found: true,
+      name: item.title ?? businessName,
+      rating: item.rating?.value ?? null,
+      reviewCount: item.rating?.votes_count ?? null,
+      category: item.category ?? null,
+    };
+  } catch {
+    return { found: false };
+  }
 }
