@@ -833,3 +833,21 @@ All new DataForSEO endpoints confirmed against their own docs before implementin
 **On the Link Gap "No gap found" result and the Claude/Ahrefs question:** re-checked `computeLinkGap()` — it doesn't use the `date` param at all (calls `referringDomains()` directly), so it wasn't affected by the bug above. A genuine "No gap found" between two major Nigerian fintechs (kuda.com vs moniepoint.com) is plausible — they likely share a lot of press/news coverage already. No fix applied here since nothing incorrect was found; flagging that this specific result may simply be accurate rather than broken. On directing Claude to orchestrate Ahrefs calls: given the actual bug was a one-line date parameter issue, adding a Claude-orchestration layer on top would have papered over the real problem rather than fixing it — the direct fix above is the right one.
 
 **Not fixed — needs live logs to diagnose, flagged rather than guessed:** the missing homepage screenshot, mobile screenshot, and page title on the kuda.com test run. The code paths for all three look correct on inspection, and each already fails gracefully (shows nothing rather than crashing) if the underlying fetch/capture didn't succeed — but without `aws logs tail` output from that specific run, there's no way to tell whether ScrapingBee genuinely failed for this page, or something else. Worth checking on the next real test.
+
+---
+
+## Update 55 — Re-verified the Ahrefs keyword fix live, and rebuilt the emailed PDF report to match the dashboard
+
+1. **Re-verified Update 54's Ahrefs date fix by calling the real API directly** with kuda.com's exact parameters (country=NG, mode=subdomains, the corrected 2-day-back date). It returned correct real data — "kuda" at position 1, 16,000 volume, etc. Also re-checked the response-mapping function and country-code resolution (`Nigeria` → `NG`) — both correct. Since the exact code, tested live, works, this strongly suggests Update 54 hadn't been redeployed yet when this was re-tested. No further code change made here without new evidence — flagged, not guessed.
+2. **Rebuilt the emailed PDF report from scratch** (`lib/report/pdf.ts`) to actually match the dashboard instead of being a plain light-background text document:
+   - Same dark theme as the web app (near-black background, green/red/yellow accents matching the dashboard's exact palette)
+   - **Embedded homepage screenshot** at the top of the report (decoded from the base64 data URL already captured during the audit)
+   - Real **overall readiness score + the 3 category bars** (Technical/Content/AI Visibility), same grouping and colors as the dashboard hero
+   - Real **Your Score / Industry Average / Top Competitor** row (the same computed comparison, never fabricated)
+   - **Technical SEO Audit** issues with real severity tags (Very High/High/Medium/Low, same color coding as `SiteIssues.tsx`) and real affected page URLs, so it stays verifiable
+   - Real **keyword table** (keyword/position/volume) and **backlink stats**, with the same "no ranking keywords found — biggest opportunity" copy as the dashboard when empty
+   - **AI Visibility page**: real sentiment bars and real share-of-voice numbers
+   - **Recommendations**, color-tagged by priority
+   - Claude's role shrank from "structure the whole report" to writing 4 short explanatory blurbs (`lib/report/narrative.ts`: executive summary, technical summary, AI visibility summary, recommendations intro) — every number, score, and table is now rendered directly from the real audit data, never re-typed through a model, closing the gap between what the dashboard shows and what the emailed PDF shows.
+   - Verified this by actually generating a test PDF end-to-end (not just type-checking) and rendering each page to an image for visual inspection — caught and fixed one real rendering bug in the process (a section-heading underline was overlapping its own text due to a spacing miscalculation) before finalizing.
+   - `app/api/report/request/route.ts` updated to pass the full real `report`/`aiVisibility` objects into the new PDF builder signature instead of pre-digested prose content.
