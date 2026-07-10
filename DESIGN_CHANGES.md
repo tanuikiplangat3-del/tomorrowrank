@@ -851,3 +851,19 @@ All new DataForSEO endpoints confirmed against their own docs before implementin
    - Claude's role shrank from "structure the whole report" to writing 4 short explanatory blurbs (`lib/report/narrative.ts`: executive summary, technical summary, AI visibility summary, recommendations intro) — every number, score, and table is now rendered directly from the real audit data, never re-typed through a model, closing the gap between what the dashboard shows and what the emailed PDF shows.
    - Verified this by actually generating a test PDF end-to-end (not just type-checking) and rendering each page to an image for visual inspection — caught and fixed one real rendering bug in the process (a section-heading underline was overlapping its own text due to a spacing miscalculation) before finalizing.
    - `app/api/report/request/route.ts` updated to pass the full real `report`/`aiVisibility` objects into the new PDF builder signature instead of pre-digested prose content.
+
+---
+
+## Update 56 — Public tool timing out again on a real site (ke.uncoverskincare.com): gated Updates 52-53's heavier additions to internal-only
+
+A repeat "audit stopped responding" on the public tool, on a real e-commerce site, after Update 55. Root cause this time isn't a new bug — it's cumulative scope creep: Updates 52 and 53 each added a genuinely valuable feature (competitor lite-audit for Your Score/Industry Average/Top Competitor, Content Gap, Bing/Yahoo/Images/Maps SERP, On-Page API cross-check), and each one was individually timeout-bounded — but all of them landed on the SAME 3-minute public-tool budget, and the cumulative weight was still too much for a real, possibly-protected e-commerce site.
+
+**The decisive fix, rather than more incremental timeout tuning:** all of these newer additions are now **internal-tool only** (`extrasEnabled = job.input.internal`):
+- Competitor lite-audit (Your Score / Industry Average / Top Competitor row) — this was also the single riskiest addition specifically, since it fetches a **third-party competitor domain whose responsiveness we don't control at all**, unlike DataForSEO/Ahrefs calls which have predictable latency profiles.
+- Content Gap
+- Bing SERP, Yahoo SERP, Google Images presence, Google Maps presence
+- On-Page API technical cross-check
+
+The public tool goes back to a leaner core: on-page checks, crawl, Google SERP snapshot, Ads volume, Business Profile, Link Gap, and the primary AI Visibility dashboard — the same set that was reliable before Update 53. The internal tool (30-minute budget) keeps full depth, all of it.
+
+**Worth being honest about a real limitation found while investigating this:** `withTimeout()` (used throughout the orchestrator to bound individual steps) is implemented as `Promise.race()`, which does NOT cancel the underlying operation when it "times out" — it only stops waiting for it. A slow ScrapingBee or DataForSEO call that got raced-out still runs to completion in the background, consuming real network/CPU resources, even though the audit has moved on. This means the individual per-call timeout numbers used throughout this project are an upper bound on how long the AUDIT waits, not a guarantee that the underlying work actually stops — which is part of why cumulative scope across many "individually bounded" calls can still behave worse than the sum of the caps suggests. Properly fixing this would mean threading `AbortController` through every fetch call instead of racing against a timer — a real architectural improvement, but a larger change than this fix; noting it here rather than leaving it undiscovered.

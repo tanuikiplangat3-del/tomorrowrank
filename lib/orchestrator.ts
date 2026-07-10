@@ -196,16 +196,26 @@ export async function runAudit(job: AuditJob): Promise<void> {
           .filter((d): d is string => !!d && d !== domain)
       )
     ).slice(0, 2);
-    const competitorScoresPromise = Promise.all(
-      competitorDomainsToAudit.map((d) => auditCompetitorLite(d, targetKeyword))
-    );
+    // These two are internal-tool only (see below): a competitor lite-audit
+    // fetches a THIRD-PARTY domain we don't control the responsiveness of —
+    // the single riskiest addition for the public tool's 3-minute budget,
+    // since a slow/protected competitor site eats budget with no way to
+    // predict it in advance. The public tool's hero simply won't show the
+    // Industry Average / Top Competitor row; the internal tool (30-min
+    // budget) can afford it.
+    const competitorScoresPromise = job.input.internal
+      ? Promise.all(competitorDomainsToAudit.map((d) => auditCompetitorLite(d, targetKeyword)))
+      : Promise.resolve(competitorDomainsToAudit.map(() => null));
 
     // Content Gap: keywords the competitor ranks for that we don't rank for AT
     // ALL — distinct from Keyword Opportunities (our own near-misses) and
     // Link Gap (backlinks, not keywords). Reuses organicKeywords(), just
     // called against the competitor domain and diffed against our own set —
-    // no new Ahrefs endpoint needed.
-    const contentGapPromise = competitorDomain
+    // no new Ahrefs endpoint needed. Internal-only for the same budget reason
+    // as above (one more parallel branch is cheap on its own, but Updates
+    // 52-53 added several of these at once and their CUMULATIVE weight was
+    // still too much for the public tool's budget on a real, heavy site).
+    const contentGapPromise = job.input.internal && competitorDomain
       ? organicKeywords(competitorDomain, loc.countryCode, 50).catch(() => [])
       : Promise.resolve([] as any[]);
 
@@ -240,6 +250,16 @@ export async function runAudit(job: AuditJob): Promise<void> {
     // local/physical business — reuse the same heuristic driving the Local
     // category checks rather than firing it for every SaaS/global brand.
     const looksLocal = !!signals.hasLocalBusinessSchema || (!!signals.hasAddress && !!signals.hasPhone);
+    // Secondary SERP engines (Bing/Yahoo/Images/Maps) and the On-Page
+    // cross-check are internal-tool only. Each one is individually
+    // timeout-bounded, but Updates 52-53 added several of these plus the
+    // competitor lite-audit and content gap all onto the SAME public-tool
+    // budget, and the cumulative weight was still too much on a real,
+    // protected e-commerce site (confirmed by a repeat "stopped responding"
+    // failure after the individual per-call bounds were already in place).
+    // Public tool: fast and reliable, core signals only. Internal tool: full
+    // depth, 30-minute budget can afford all of it.
+    const extrasEnabled = job.input.internal;
 
     const [
       geo, serpRawDfs, businessRaw, adsVolume, linkGap, competitorScoresRaw,
@@ -258,19 +278,19 @@ export async function runAudit(job: AuditJob): Promise<void> {
       withTimeout(linkGapPromise, 15_000).catch(() => ({ competitor: competitorDomain, domains: [] })),
       withTimeout(competitorScoresPromise, 22_000).catch(() => competitorDomainsToAudit.map(() => null)),
       withTimeout(contentGapPromise, 15_000).catch(() => []),
-      dfsReady
+      dfsReady && extrasEnabled
         ? withTimeout(bingOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
         : Promise.resolve(null),
-      dfsReady
+      dfsReady && extrasEnabled
         ? withTimeout(yahooOrganicPosition(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
         : Promise.resolve(null),
-      dfsReady
+      dfsReady && extrasEnabled
         ? withTimeout(googleImagesPresence(domain.split(".")[0], loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => undefined)
         : Promise.resolve(undefined),
-      dfsReady && looksLocal
+      dfsReady && extrasEnabled && looksLocal
         ? withTimeout(googleMapsPresence(businessNameGuess, loc.locationCode!, lang.languageCode, businessNameGuess), 15_000).catch(() => undefined)
         : Promise.resolve(undefined),
-      dataForSeoConfigured()
+      dataForSeoConfigured() && extrasEnabled
         ? withTimeout(onPageInstantCheck(signals.finalUrl), 20_000).catch(() => null)
         : Promise.resolve(null),
     ]);
