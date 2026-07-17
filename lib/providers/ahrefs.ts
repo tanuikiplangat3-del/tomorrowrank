@@ -22,7 +22,12 @@ async function get<T = any>(path: string, params: Record<string, string>): Promi
   const res = await fetch(`${BASE}${path}?${qs}`, {
     method: "GET",
     headers: authHeaders(),
-    signal: AbortSignal.timeout(60_000),
+    // Ahrefs normally responds in well under 2s. 20s (was 60s) is already a
+    // generous margin for a slow day — the old 60s ceiling meant a single
+    // degraded Ahrefs endpoint could silently eat a THIRD of the public
+    // tool's entire 180s budget, since Promise.allSettled waits for the
+    // slowest of the ~9 parallel Ahrefs calls before the audit can proceed.
+    signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -31,9 +36,15 @@ async function get<T = any>(path: string, params: Record<string, string>): Promi
   return (await res.json()) as T;
 }
 
-// today's date in YYYY-MM-DD, used by endpoints that need a `date`
+// Ahrefs' metrics index has a processing lag — the exact current calendar date
+// is NOT yet available and the API rejects it outright with "bad date"
+// (confirmed via a live test call: today() failed, 1 day back succeeded).
+// A 2-day safety margin avoids ever hitting that edge, at the cost of the
+// data being up to 2 days old, which is immaterial for an SEO audit.
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  d.setDate(d.getDate() - 2);
+  return d.toISOString().slice(0, 10);
 }
 
 // ---------- DOMAIN RATING (authority) ----------
@@ -44,6 +55,7 @@ export async function domainRating(target: string) {
       target,
       date: today(),
       protocol: "both",
+      mode: "subdomains",
     });
     return {
       domainRating: data?.domain_rating?.domain_rating ?? data?.domain_rating ?? null,
@@ -140,6 +152,7 @@ export async function organicKeywords(
 ) {
   const data = await get("/site-explorer/organic-keywords", {
     target,
+    mode: "subdomains",
     country: country.toUpperCase(),
     select: "keyword,best_position,volume,sum_traffic,best_position_url,keyword_difficulty,cpc",
     order_by: "sum_traffic:desc",
@@ -154,6 +167,7 @@ export async function organicCompetitors(target: string, country: string, limit 
   try {
     const data = await get("/site-explorer/organic-competitors", {
       target,
+      mode: "subdomains",
       country: country.toUpperCase(),
       select: "competitor_domain,common_keywords,domain_rating",
       order_by: "common_keywords:desc",
@@ -161,6 +175,47 @@ export async function organicCompetitors(target: string, country: string, limit 
       date: today(),
     });
     return (data?.competitors ?? data?.items ?? []) as any[];
+  } catch {
+    return [];
+  }
+}
+
+// ---------- KEYWORD OPPORTUNITIES ----------
+// Keywords the domain already shows up for at positions 4-50 (page 1 bottom
+// half through page 5) — visible to Google but not yet winning the click.
+// These are genuine "close but not there yet" wins, distinct from the
+// top-ranking keywords already surfaced by organicKeywords(). Reuses the same
+// organic-keywords endpoint with a `where` filter, so no new Ahrefs product
+// is needed — sorted by search volume so the highest-value gaps surface first.
+export async function keywordOpportunities(target: string, country: string, limit = 20) {
+  try {
+    const data = await get("/site-explorer/organic-keywords", {
+      target,
+      mode: "subdomains",
+      country: country.toUpperCase(),
+      select: "keyword,best_position,volume,keyword_difficulty,best_position_url",
+      where: JSON.stringify({
+        or: [
+          { field: "best_position_set", is: ["eq", "top_4_10"] },
+          { field: "best_position_set", is: ["eq", "top_11_50"] },
+        ],
+      }),
+      order_by: "volume:desc",
+      limit: String(limit),
+      date: today(),
+    });
+    let items = (data?.keywords ?? data?.items ?? []) as any[];
+    // Fall back to a client-side filter if the `where` filter shape above
+    // isn't accepted by this endpoint/plan — better a slightly-looser result
+    // than an empty section.
+    if (!items.length) {
+      const all = await organicKeywords(target, country, 100);
+      items = all.filter((it) => {
+        const p = it?.best_position;
+        return typeof p === "number" && p >= 4 && p <= 50;
+      });
+    }
+    return items;
   } catch {
     return [];
   }

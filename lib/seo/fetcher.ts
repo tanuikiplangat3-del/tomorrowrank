@@ -331,6 +331,7 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
   const linkTags = tagsOf(html, "link");
   const rawTitle = textBetween(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
   const title = rawTitle ? decodeEntities(stripTags(rawTitle)) || null : null;
+  const metaDescription = metaContent(metas, (k) => k === "description");
   const canonical =
     linkTags.find((a) => (a.rel ?? "").toLowerCase().split(/\s+/).includes("canonical"))
       ?.href ?? null;
@@ -348,7 +349,7 @@ export async function fetchPageSignals(rawUrl: string): Promise<PageSignals> {
     protected: wasProtected,
     html,
     title,
-    metaDescription: metaContent(metas, (k) => k === "description"),
+    metaDescription,
     canonical,
     robotsMeta: metaContent(metas, (k) => k === "robots"),
     h1,

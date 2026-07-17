@@ -7,9 +7,9 @@ const GTM_ID = "GTM-PVGW8KF";
 
 const SITE = "https://tools.welcometomorrow.io";
 const PATH = "/ranktomorrow";
-// Brand assets provided by the team (hosted on imgur).
-const FAVICON = "https://i.imgur.com/JTyaf8H.jpeg";
-const THUMB = "https://i.imgur.com/JTyaf8H.jpeg";
+// Brand assets — served from our own domain (public/wt-logo-mark.png).
+const FAVICON = `${PATH}/wt-logo-mark.png`;
+const THUMB = `${PATH}/wt-logo-mark.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     url: `${SITE}${PATH}`,
     siteName: "RankTomorrow by Welcome Tomorrow",
     type: "website",
-    images: [{ url: THUMB, width: 1200, height: 630, alt: "RankTomorrow by Welcome Tomorrow" }],
+    images: [{ url: THUMB, width: 1024, height: 1024, alt: "RankTomorrow by Welcome Tomorrow" }],
   },
   twitter: {
     card: "summary_large_image",

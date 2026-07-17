@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import type { AiVisibilityReport } from "@/types/audit";
+import type { AiVisibilityReport, AiPlatformStat } from "@/types/audit";
 import { BlurGate } from "./Gate";
 
 // Green-led palette on the dark canvas; client brand is always wtgreen.
@@ -17,6 +17,103 @@ function colorFor(i: number, isClient: boolean) {
 }
 
 const CARD = "rounded-xl2 border border-glassBorder bg-glass p-6 shadow-card backdrop-blur-sm";
+
+const PLATFORM_ICON: Record<AiPlatformStat["platform"], string> = {
+  "AI Overviews": "◆",
+  ChatGPT: "●",
+  "AI Mode": "G",
+  Gemini: "✦",
+  Perplexity: "◈",
+  Claude: "▲",
+  Copilot: "◫",
+  Grok: "⨂",
+};
+
+function DeltaTag({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-muted">—</span>;
+  const sign = value > 0 ? "+" : "";
+  const color = value > 0 ? "text-good" : value < 0 ? "text-bad" : "text-muted";
+  return <span className={`font-semibold ${color}`}>{sign}{value}</span>;
+}
+
+function AiResponsesDashboard({ data, bare = false }: { data: AiVisibilityReport["aiResponses"]; bare?: boolean }) {
+  if (!data) return null;
+  const [aiOverviews, chatgpt, ...rest] = data.platforms;
+  return (
+    <div className={bare ? "mt-4" : `${CARD} mb-5`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="font-display text-lg font-bold text-paper">AI Responses</h3>
+        <span className="rounded bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-muted">
+          {data.comparedToPrevious ? "vs your previous audit" : "first audit — no history yet"}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        Out of {chatgpt?.responsesOf ?? "—"} tracked buyer-intent prompts per platform. &ldquo;Pages&rdquo; = distinct
+        site pages cited with a real URL — only available where the platform returns structured citations.
+      </p>
+
+      {/* Top two headline platforms, like the reference dashboard */}
+      <div className="mt-5 grid gap-6 sm:grid-cols-2">
+        {[aiOverviews, chatgpt].filter(Boolean).map((p) => (
+          <div key={p.platform}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">{p.platform}</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-lg">{PLATFORM_ICON[p.platform]}</span>
+              <span className="font-display text-3xl font-extrabold text-paper">{p.responses ?? "—"}</span>
+              <DeltaTag value={p.responsesDelta} />
+            </div>
+            <p className="mt-1 text-sm text-muted">
+              Pages <span className="font-semibold text-paper">{p.pages ?? "—"}</span>{" "}
+              <DeltaTag value={p.pagesDelta} />
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Remaining platforms as a table */}
+      <table className="mt-6 w-full text-sm">
+        <thead className="text-left text-xs uppercase tracking-wide text-muted">
+          <tr>
+            <th className="py-1">Platform</th>
+            <th className="text-right">Responses</th>
+            <th className="text-right">Pages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rest.map((p) => (
+            <tr key={p.platform} className="border-t border-white/10">
+              <td className="py-2 text-paper">
+                <span className="mr-2">{PLATFORM_ICON[p.platform]}</span>
+                {p.platform}
+                {!p.available && <span className="ml-2 text-xs text-muted">(paused)</span>}
+              </td>
+              <td className="text-right">
+                {p.available ? (
+                  <>
+                    <span className="font-semibold text-wtgreen">{p.responses ?? "—"}</span>{" "}
+                    <DeltaTag value={p.responsesDelta} />
+                  </>
+                ) : (
+                  <span className="text-muted" title={p.note}>—</span>
+                )}
+              </td>
+              <td className="text-right">
+                {p.available ? (
+                  <>
+                    <span className="font-semibold text-wtgreen">{p.pages ?? "—"}</span>{" "}
+                    <DeltaTag value={p.pagesDelta} />
+                  </>
+                ) : (
+                  <span className="text-muted" title={p.note}>—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
   const sov = data.shareOfVoice;
@@ -36,12 +133,9 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
     <section className="mt-10">
       <div className="mb-5 flex items-baseline gap-3">
         <h2 className="font-display text-2xl font-extrabold text-paper">AI Visibility</h2>
-        <span className="text-sm font-medium text-muted">
-          GEO / Generative Engine Optimization · {data.modelsQueried.join(" · ") || "Claude"}
-        </span>
       </div>
 
-      {/* Row 1: Insights + Bubble */}
+      {/* Row 1: Insights + AI Responses (replaces the old Share of Voice vs Sentiment bubble chart) */}
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Insights */}
         <div className={CARD}>
@@ -54,42 +148,13 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
           </ol>
         </div>
 
-        {/* Share of Voice vs Sentiment bubble */}
+        {/* AI Responses — real platform-by-platform citation/mention tracking */}
         <div className={CARD}>
-          <h3 className="font-display text-lg font-bold text-paper">Share of Voice vs. Sentiment</h3>
-          <div className="mt-3 rounded-lg bg-violet/10 p-3">
+          <div className="rounded-lg bg-violet/10 p-3">
             <p className="text-sm font-bold text-violet">✦ {data.headline.tag}</p>
             <p className="text-sm text-paper">{data.headline.text}</p>
           </div>
-          <div className="mt-4 h-[280px]">
-            <ResponsiveContainer>
-              <ScatterChart margin={{ top: 10, right: 16, bottom: 20, left: 0 }}>
-                <CartesianGrid stroke="rgba(255,255,255,0.1)" />
-                <XAxis type="number" dataKey="x" name="Share of Voice"
-                  domain={[0, "dataMax + 5"]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
-                  tickFormatter={(t: any) => `${t}%`}
-                  label={{ value: "Share of Voice (%)", position: "insideBottom", offset: -8, fontSize: 11, fill: "#B9C2BC" }} />
-                <YAxis type="number" dataKey="y" name="Sentiment"
-                  domain={[0, 100]} tick={{ fontSize: 11, fill: "#B9C2BC" }}
-                  tickFormatter={(t: any) => `${t}%`}
-                  label={{ value: "Sentiment Score (%)", angle: -90, position: "insideLeft", fontSize: 11, fill: "#B9C2BC" }} />
-                <ZAxis type="number" dataKey="z" range={[120, 1400]} name="size" />
-                <Tooltip cursor={{ strokeDasharray: "3 3" }}
-                  contentStyle={{ background: "#0c0f0d", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8 }}
-                  labelStyle={{ color: "#ffffff" }}
-                  itemStyle={{ color: "#ffffff" }}
-                  formatter={(v: any, n: any) => {
-                    if (n === "size") return [null, null]; // hide internal bubble-size value
-                    return [`${v}%`, n];
-                  }} />
-                <Scatter data={bubbleData} name="Brand">
-                  {bubbleData.map((b, i) => (
-                    <Cell key={i} fill={b.fill} fillOpacity={0.65} />
-                  ))}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
+          <AiResponsesDashboard data={data.aiResponses} bare />
         </div>
       </div>
 

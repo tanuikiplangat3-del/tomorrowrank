@@ -4,7 +4,7 @@ import { Nav } from "@/components/Nav";
 import { SeoContent } from "@/components/SeoContent";
 import { Footer } from "@/components/Footer";
 
-export function Landing({ internal = false }: { internal?: boolean }) {
+export function Landing({ internal = false, initialUrl = "" }: { internal?: boolean; initialUrl?: string }) {
   return (
     <main className="relative min-h-screen">
       <Nav />
@@ -17,7 +17,7 @@ export function Landing({ internal = false }: { internal?: boolean }) {
         </div>
       )}
 
-      <AuditApp internal={internal} />
+      <AuditApp internal={internal} initialUrl={initialUrl} />
 
       {/* SEO / GEO marketing content (public page only) */}
       {!internal && <SeoContent />}

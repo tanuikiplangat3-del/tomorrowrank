@@ -9,7 +9,12 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// The SDK's default request timeout is 10 MINUTES if not set explicitly — far
+// beyond even the internal tool's 30-minute audit budget, and catastrophic for
+// the public tool's 3-minute one. 25s is generous for a single JSON-judgment
+// call (even with web search); a genuinely slow/hung request should fail fast
+// and let the caller fall back to defaults, not silently hold the whole audit.
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 25_000 });
 
 // Model strings — verify current names at https://docs.claude.com/en/docs/about-claude/models
 export const MODELS = {
@@ -23,21 +28,25 @@ export async function claudeJSON<T = any>(opts: {
   prompt: string;
   maxTokens?: number;
   webSearch?: boolean;
+  timeoutMs?: number;
 }): Promise<T> {
   // The web_search server tool is typed loosely here; the API accepts it as-is.
   const tools = opts.webSearch
     ? ([{ type: "web_search_20250305", name: "web_search" }] as any)
     : undefined;
 
-  const msg = await anthropic.messages.create({
-    model: opts.model ?? MODELS.judge,
-    max_tokens: opts.maxTokens ?? 2000,
-    system:
-      (opts.system ?? "") +
-      "\nReturn ONLY valid minified JSON. No markdown, no backticks, no preamble.",
-    messages: [{ role: "user", content: opts.prompt }],
-    ...(tools ? { tools } : {}),
-  });
+  const msg = await anthropic.messages.create(
+    {
+      model: opts.model ?? MODELS.judge,
+      max_tokens: opts.maxTokens ?? 2000,
+      system:
+        (opts.system ?? "") +
+        "\nReturn ONLY valid minified JSON. No markdown, no backticks, no preamble.",
+      messages: [{ role: "user", content: opts.prompt }],
+      ...(tools ? { tools } : {}),
+    },
+    opts.timeoutMs ? { timeout: opts.timeoutMs } : undefined
+  );
 
   const text = msg.content
     .map((b) => (b.type === "text" ? b.text : ""))

@@ -220,7 +220,7 @@ async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>)
 
 export async function crawlSite(
   startUrl: string,
-  opts: { maxPages?: number; deadlineMs?: number; concurrency?: number; proxy?: ProxyMode } = {}
+  opts: { maxPages?: number; deadlineMs?: number; concurrency?: number; proxy?: ProxyMode; seedUrls?: string[] } = {}
 ): Promise<CrawlResult> {
   const maxPages = opts.maxPages ?? (Number(process.env.CRAWL_MAX_PAGES) || 50);
   const deadline = Date.now() + (opts.deadlineMs ?? 180_000);
@@ -253,6 +253,14 @@ export async function crawlSite(
   } else {
     queue = homeFacts.internalLinks.map(normalizeUrl).filter((u): u is string => !!u);
   }
+
+  // Known-important pages (e.g. Ahrefs' top-pages-by-backlinks) go first, so a
+  // small sample or a time-boxed crawl covers the pages that actually carry
+  // link equity/traffic before spending budget on lower-value discovery order.
+  const seeds = (opts.seedUrls ?? [])
+    .map(normalizeUrl)
+    .filter((u): u is string => !!u && sameHost(u, finalUrl));
+  queue = [...seeds, ...queue.filter((u) => !seeds.includes(u))];
 
   // Always include the homepage first; dedupe; cap.
   const seen = new Set<string>([finalUrl]);

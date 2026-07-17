@@ -12,7 +12,7 @@ import type { AuditJob } from "@/types/audit";
 const TTL_SECONDS = 60 * 60; // keep jobs for 1 hour
 
 let redis: Redis | null = null;
-function getRedis(): Redis | null {
+export function getRedis(): Redis | null {
   if (redis) return redis;
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
   const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();

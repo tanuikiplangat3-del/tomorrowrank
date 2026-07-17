@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
       ? new URL(job.report.meta.finalUrl).hostname.replace(/^www\./, "")
       : (job.input?.url || "your site");
 
-    // Claude narrative from real data -> PDF
+    // Claude writes short narrative blurbs from real data -> PDF renders the
+    // real data directly (scores, tables, issues) plus those blurbs.
     let content, pdf;
     try {
       content = await buildReportNarrative({ siteLabel, report: job.report, ai: job.aiVisibility });
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Could not build the report content." }, { status: 500 });
     }
     try {
-      pdf = await buildReportPdf(content);
+      pdf = await buildReportPdf(job.report, job.aiVisibility, content);
     } catch (e: any) {
       console.error("[report/request] pdf failed:", e?.message ?? e);
       return NextResponse.json({ ok: false, error: "Could not render the PDF." }, { status: 500 });
