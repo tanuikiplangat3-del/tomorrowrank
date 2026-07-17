@@ -10,7 +10,6 @@ import type {
   AiVisibilityReport,
   BrandShare,
   VisibilityInsight,
-  AiPlatformStat,
 } from "@/types/audit";
 import {
   claudeJSON,
@@ -23,12 +22,8 @@ import {
   dataForSeoConfigured,
   googleAiOverview,
   chatGptAnswers,
-  geminiAnswers,
-  perplexityAnswers,
-  claudeAnswersDfs,
 } from "@/lib/providers/dataforseo-ai";
 import { resolveLocation } from "@/lib/locations";
-import { getPreviousSnapshot, saveSnapshot, type Snapshot } from "@/lib/store/aivisibility-history";
 
 interface BrandContext {
   brand: string;
@@ -60,14 +55,6 @@ Visitor's country (for reference only — the brand may serve a wider area): ${c
 Homepage text (truncated): """${pageText.slice(0, 6000)}"""
 
 Determine the brand's real market scope from what the site actually says about who it serves. If the site positions itself continent- or region-wide (e.g. "we help brands across Africa"), the scope is that region, NOT the visitor's single country. If it clearly serves one country or city, use that.
-
-The ${PROMPT_COUNT} prompts must NOT all be the same shape (e.g. don't make every one a "best X in Y" question) — cover a genuine MIX of how real buyers actually search, across these archetypes:
-- a direct/brand-adjacent question (naming the category, not the brand)
-- a comparison question ("X vs Y", "which is better for...")
-- a "best/top" list question
-- a "how to" / how-does-it-work question
-- a "where to find / who offers" question
-Pick a sensible mix across these for the ${PROMPT_COUNT} prompts (not necessarily one of each if ${PROMPT_COUNT} isn't a clean multiple) — the goal is realistic variety, not five near-identical "best agency" phrasings.
 
 Return JSON:
 {
@@ -249,95 +236,6 @@ Return JSON:
 }
 
 // ============================================================
-// AI RESPONSES DASHBOARD — mention-count tracking across platforms, styled
-// like the screenshot (AI Overviews / ChatGPT / AI Mode / Gemini / Perplexity
-// / Copilot / Grok, each with a Responses + Pages count and a delta vs the
-// domain's previous audit).
-//
-// Honesty notes, deliberately kept rather than smoothed over:
-//  - "Responses" = how many of the tracked prompts mentioned the brand. Real
-//    and computable for every text-answer platform (ChatGPT/Gemini/Perplexity).
-//  - "Pages" = distinct site pages CITED with a real URL. Only Google AI
-//    Overview/AI Mode returns structured citation URLs on this integration;
-//    ChatGPT/Gemini/Perplexity return conversational text with no confirmed,
-//    parseable citation-URL field, so their Pages column is left null (shown
-//    as "—") rather than guessed.
-//  - Copilot and Grok have no confirmed API path on any connected provider —
-//    marked unavailable rather than faked.
-//  - "AI Overviews" and "AI Mode" currently come from the SAME underlying
-//    DataForSEO call (serp/google/ai_mode/live/advanced) on this account —
-//    Google's classic AI Overview box and the newer full AI Mode experience
-//    aren't separately queryable here, so both rows reflect the same signal.
-// ============================================================
-async function buildAiResponsesDashboard(args: {
-  domain: string;
-  brandStem: string;
-  promptCount: number;
-  chatGpt: { prompt: string; answer: string }[];
-  gemini: { prompt: string; answer: string }[];
-  perplexity: { prompt: string; answer: string }[];
-  claude: { prompt: string; answer: string }[];
-  aiOverview: { present: boolean; citedDomains: string[]; references: { domain: string; url: string; title: string }[] };
-}): Promise<AiVisibilityReport["aiResponses"]> {
-  const { domain, brandStem, promptCount, chatGpt, gemini, perplexity, claude, aiOverview } = args;
-
-  const countMentions = (answers: { answer: string }[]) =>
-    answers.filter((a) => (a.answer || "").toLowerCase().includes(brandStem)).length;
-
-  const aiOverviewPages = aiOverview.present
-    ? new Set(aiOverview.references.filter((r) => r.domain.includes(brandStem)).map((r) => r.url)).size
-    : 0;
-
-  const current: Snapshot = {
-    "AI Overviews": { responses: aiOverview.present ? (aiOverviewPages > 0 ? 1 : 0) : 0, pages: aiOverviewPages },
-    "ChatGPT": { responses: countMentions(chatGpt), pages: null },
-    "AI Mode": { responses: aiOverview.present ? (aiOverviewPages > 0 ? 1 : 0) : 0, pages: aiOverviewPages },
-    "Gemini": { responses: countMentions(gemini), pages: null },
-    "Perplexity": { responses: countMentions(perplexity), pages: null },
-    "Claude": { responses: countMentions(claude), pages: null },
-  };
-
-  let previous: Snapshot | null = null;
-  try {
-    previous = await getPreviousSnapshot(domain);
-    await saveSnapshot(domain, current);
-  } catch {
-    /* best-effort — a history read/write failure shouldn't break the audit */
-  }
-
-  const delta = (now: number | null, prev: number | null | undefined) =>
-    now == null || prev == null ? null : now - prev;
-
-  const platforms: AiPlatformStat[] = [
-    ...(["AI Overviews", "ChatGPT", "AI Mode", "Gemini", "Perplexity", "Claude"] as const).map((platform) => ({
-      platform,
-      responses: current[platform].responses,
-      responsesOf: promptCount,
-      responsesDelta: delta(current[platform].responses, previous?.[platform]?.responses),
-      pages: current[platform].pages,
-      pagesDelta: delta(current[platform].pages, previous?.[platform]?.pages),
-      available: true,
-    })),
-    {
-      platform: "Copilot" as const,
-      responses: null, responsesOf: null, responsesDelta: null,
-      pages: null, pagesDelta: null,
-      available: false,
-      note: "Not available — no API access to Copilot from any connected provider.",
-    },
-    {
-      platform: "Grok" as const,
-      responses: null, responsesOf: null, responsesDelta: null,
-      pages: null, pagesDelta: null,
-      available: false,
-      note: "Not available — no API access to Grok from any connected provider.",
-    },
-  ];
-
-  return { platforms, comparedToPrevious: !!previous };
-}
-
-// ============================================================
 // PRIMARY PATH: DataForSEO — real ChatGPT answers + real Google AI Overview
 // (uses the endpoints verified on this account, not the llm_mentions tier).
 // ============================================================
@@ -354,24 +252,16 @@ async function runWithDataForSeo(
   onStage?.("Mapping your market & competitors", 10);
   const ctx = await deriveContext(brand, country, pageText);
 
-  // 2. FEATURE B — ask ChatGPT, Gemini AND Perplexity the same real buyer-intent
-  //    prompts (via DataForSEO), grounding web search to the AUDITED country
-  //    where each model supports it. Running all three in parallel instead of
-  //    sequentially keeps this step's wall-clock time roughly the same as
-  //    ChatGPT alone.
-  onStage?.("Asking ChatGPT, Gemini, Perplexity & Claude what they recommend", 30);
-  const [gptAnswers, geminiRes, perplexityRes, claudeRes] = await Promise.all([
-    chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }),
-    geminiAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
-    perplexityAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
-    claudeAnswersDfs(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso }).catch(() => []),
-  ]);
+  // 2. FEATURE B — ask ChatGPT the real buyer-intent prompts (via DataForSEO),
+  //    grounding ChatGPT's web search to the AUDITED country (not the US default).
+  onStage?.("Asking ChatGPT what it recommends", 35);
+  const gptAnswers = await chatGptAnswers(ctx.prompts.slice(0, PROMPT_COUNT), { countryIso });
 
   // 3. FEATURE A — check the real Google AI Overview for the brand's category,
   //    but ONLY when we have the audited country's real DataForSEO location code.
   //    We never fall back to USA — showing US AI-Overview data for a non-US audit
   //    would be misleading, so we skip it instead.
-  onStage?.("Reading Google AI Overview citations", 55);
+  onStage?.("Reading Google AI Overview citations", 60);
   let aiOverview: Awaited<ReturnType<typeof googleAiOverview>> = {
     present: false, citedDomains: [], references: [],
   };
@@ -385,9 +275,7 @@ async function runWithDataForSeo(
     console.warn(`[ai-visibility] no DataForSEO location code for "${country}" — skipping AI Overview to avoid wrong-country data.`);
   }
 
-  // 4. Probes from the REAL ChatGPT answers (Gemini/Perplexity feed the AI
-  //    Responses dashboard below, but keep the existing insight-drilldown
-  //    focused on ChatGPT so its shape/behaviour doesn't change).
+  // 4. Probes from the REAL ChatGPT answers.
   const brandStem = brand.toLowerCase().split(".")[0];
   const probes = gptAnswers.map((a) => ({
     engine: "ChatGPT",
@@ -395,20 +283,6 @@ async function runWithDataForSeo(
     answer: (a.answer || "").slice(0, 600),
     brandCited: (a.answer || "").toLowerCase().includes(brandStem),
   }));
-
-  // 4b. AI Responses dashboard — mention counts per platform, with deltas vs
-  // this domain's previous audit. See lib/store/aivisibility-history.ts.
-  onStage?.("Building AI Responses dashboard", 68);
-  const aiResponses = await buildAiResponsesDashboard({
-    domain: brand,
-    brandStem,
-    promptCount: PROMPT_COUNT,
-    chatGpt: gptAnswers,
-    gemini: geminiRes,
-    perplexity: perplexityRes,
-    claude: claudeRes,
-    aiOverview,
-  });
 
   // 5. Citations = the real domains Google's AI Overview cited.
   const citations = aiOverview.references.slice(0, 30).map((r) => ({
@@ -443,16 +317,9 @@ async function runWithDataForSeo(
     overallSentiment: sentiment,
     headline: aiHeadline,
     insights,
-    modelsQueried: [
-      "ChatGPT (DataForSEO)",
-      "Gemini (DataForSEO)",
-      "Perplexity (DataForSEO)",
-      "Claude (DataForSEO)",
-      "Google AI Overview (DataForSEO)",
-    ],
+    modelsQueried: ["ChatGPT (DataForSEO)", "Google AI Overview (DataForSEO)"],
     citations,
     probes,
-    aiResponses,
   };
 }
 
@@ -519,14 +386,19 @@ export async function runAiVisibility(
   pageText: string,
   onStage?: (stage: string, progress: number) => void
 ): Promise<AiVisibilityReport> {
-  if (dataForSeoConfigured() && process.env.USE_DATAFORSEO_AI !== "false") {
+  // COST CONTROL: DataForSEO (live ChatGPT + AI Overview queries) is now OPT-IN.
+  // It only runs when USE_DATAFORSEO_AI is explicitly "true". By default we use the
+  // free Claude-only path so no DataForSEO credits are spent. Flip the env var to
+  // "true" to re-enable live AI-engine data.
+  if (dataForSeoConfigured() && process.env.USE_DATAFORSEO_AI === "true") {
     try {
+      console.log("[ai-visibility] engine=dataforseo (live ChatGPT + AI Overview)");
       return await runWithDataForSeo(brand, country, pageText, onStage);
     } catch (err) {
-      // If the AI-optimization subscription isn't active or the call fails,
-      // degrade gracefully to Claude-only rather than failing the whole audit.
+      console.error("[ai-visibility] DataForSEO failed, falling back to Claude-only:", err);
       return await runWithClaudeOnly(brand, country, pageText, onStage);
     }
   }
+  console.log("[ai-visibility] engine=claude-only (DataForSEO disabled — no credits spent)");
   return await runWithClaudeOnly(brand, country, pageText, onStage);
 }

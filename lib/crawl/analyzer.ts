@@ -112,13 +112,7 @@ function sameHost(a: string, b: string): boolean {
   catch { return false; }
 }
 
-export interface CoreFieldOverrides {
-  title?: string | null;
-  metaDescription?: string | null;
-  h1s?: string[];
-}
-
-export function analyzePage(url: string, status: number, html: string, overrides?: CoreFieldOverrides): PageFacts {
+export function analyzePage(url: string, status: number, html: string): PageFacts {
   // Bot-challenge / WAF / 403 detection — do NOT trust content from these pages.
   const b = (html || "").slice(0, 4000).toLowerCase();
   const blocked =
@@ -139,20 +133,13 @@ export function analyzePage(url: string, status: number, html: string, overrides
   };
 
   const rawTitle = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
-  // ScrapingBee's CSS-selector extraction runs against the real rendered DOM
-  // (not a regex over HTML text), so when it's available for this page (only
-  // on already-proxied pages — see lib/crawl/crawler.ts / lib/seo/fetcher.ts)
-  // it takes priority over the regex match, which can be fooled by e.g. a
-  // <title> containing nested markup or unusual whitespace.
-  const title = overrides?.title !== undefined
-    ? overrides.title
-    : (rawTitle ? decodeEntities(rawTitle.replace(/<[^>]+>/g, " ")) || null : null);
-  const metaDescription = overrides?.metaDescription !== undefined ? overrides.metaDescription : metaBy("description");
+  const title = rawTitle ? decodeEntities(rawTitle.replace(/<[^>]+>/g, " ")) || null : null;
+  const metaDescription = metaBy("description");
   const canonical = links.find((a) => (a.rel ?? "").toLowerCase().split(/\s+/).includes("canonical"))?.href ?? null;
   const robotsMeta = metaBy("robots");
   const noindex = /noindex/i.test(robotsMeta ?? "");
 
-  const h1s = overrides?.h1s !== undefined ? overrides.h1s : textBetweenAll(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/gi);
+  const h1s = textBetweenAll(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/gi);
   const h2s = textBetweenAll(html, /<h2\b[^>]*>([\s\S]*?)<\/h2>/gi);
   const text = stripToText(html);
   const wordCount = text.split(/\s+/).filter(Boolean).length;

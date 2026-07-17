@@ -39,7 +39,7 @@ export function SiteIssues({ issues, meta }: { issues: SiteIssue[]; meta?: Crawl
   return (
     <section className="mt-6">
       <div className="mb-4 flex flex-wrap items-baseline gap-3">
-        <h2 className="font-display text-2xl font-extrabold text-paper">Technical SEO Audit</h2>
+        <h2 className="font-display text-2xl font-extrabold text-paper">Site Audit</h2>
         {meta && (
           <span className="text-sm text-muted">
             Crawled {meta.crawled} of {meta.discovered} pages

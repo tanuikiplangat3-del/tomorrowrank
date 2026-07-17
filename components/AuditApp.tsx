@@ -5,7 +5,7 @@ import type { AuditJob } from "@/types/audit";
 import { COUNTRIES, LANGUAGES } from "@/lib/locations";
 import { SearchableSelect } from "./SearchableSelect";
 import { LeadGate } from "./LeadGate";
-import { apiPath, BASE_PATH } from "./Gate";
+import { apiPath } from "./Gate";
 import { Report } from "./Report";
 import { gtmEvent } from "@/lib/gtm";
 
@@ -32,13 +32,12 @@ async function readJson(res: Response): Promise<any> {
   }
 }
 
-export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boolean; initialUrl?: string }) {
+export function AuditApp({ internal = false }: { internal?: boolean }) {
   const [phase, setPhase] = useState<Phase>("input");
-  const [url, setUrl] = useState(initialUrl);
+  const [url, setUrl] = useState("");
   const [country, setCountry] = useState("Kenya");
   const [language, setLanguage] = useState("English");
   const [keyword, setKeyword] = useState("");
-  const [competitorUrl, setCompetitorUrl] = useState("");
   const [job, setJob] = useState<AuditJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gateOpen, setGateOpen] = useState(false);
@@ -53,21 +52,12 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
 
   // Persist the current job id in the URL (?job=…) so a page refresh — e.g. after
   // a dropped connection — restores the SAME dashboard from storage instead of
-  // wiping it and forcing a re-audit. While we're at it, swap the bare tool
-  // root for a clean, shareable path with the audited site in it, e.g.
-  // /ranktomorrow/welcometomorrow.io (or /ranktomorrow/seo/welcometomorrow.io
-  // for the internal tool) instead of a long job/lead id string.
+  // wiping it and forcing a re-audit.
   const setJobParam = (jobId: string | null, lead?: string | null) => {
     if (typeof window === "undefined") return;
     const u = new URL(window.location.href);
     if (jobId) u.searchParams.set("job", jobId); else u.searchParams.delete("job");
     if (lead) u.searchParams.set("lead", lead); else if (lead === null) u.searchParams.delete("lead");
-    if (jobId) {
-      const slug = prettyHost(url);
-      if (slug && /\./.test(slug)) {
-        u.pathname = `${BASE_PATH}${internal ? "/seo" : ""}/${encodeURIComponent(slug)}`;
-      }
-    }
     window.history.replaceState(null, "", u.toString());
   };
 
@@ -128,7 +118,7 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       const res = await fetch(apiPath("/api/audit/start"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, country, language, targetKeyword: keyword, competitorUrl, internal }),
+        body: JSON.stringify({ url, country, language, targetKeyword: keyword, internal }),
       });
       const data = await readJson(res);
       if (!res.ok) throw new Error(data.error || "Failed to start audit");
@@ -139,7 +129,7 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       setError(e.message);
       setPhase("error");
     }
-  }, [url, country, language, keyword, competitorUrl, internal, pollJob]);
+  }, [url, country, language, keyword, internal, pollJob]);
 
   if (phase === "done" && job?.report) {
     return (
@@ -171,23 +161,13 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       {phase === "input" || phase === "error" ? (
         <div className="mt-10">
           <div className="flex flex-col gap-3 rounded-xl2 border border-glassBorder bg-glass p-2 backdrop-blur-sm sm:flex-row sm:items-center sm:p-1.5">
-            <div className="flex flex-1 items-center gap-2 pl-3">
-              {url.trim().length > 2 && (
-                <img
-                  src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(prettyHost(url))}&sz=64`}
-                  alt=""
-                  className="h-5 w-5 shrink-0 rounded-sm"
-                  onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}
-                />
-              )}
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && start()}
-                placeholder="Example.com"
-                className="flex-1 rounded-lg bg-transparent py-3 text-lg text-paper outline-none placeholder:text-white/40"
-              />
-            </div>
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && start()}
+              placeholder="Example.com"
+              className="flex-1 rounded-lg bg-transparent px-4 py-3 text-lg text-paper outline-none placeholder:text-white/40"
+            />
             <button
               onClick={start}
               className="rounded-lg bg-wtgreen px-8 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep"
@@ -196,8 +176,8 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
             </button>
           </div>
 
-          {/* Country / language / keyword / competitor selectors */}
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Country / language / keyword selectors */}
+          <div className="mt-5 grid gap-4 sm:grid-cols-3">
             <SearchableSelect label="Country" value={country} onChange={setCountry}
               options={COUNTRIES.map((c) => c.country)} placeholder="Search your country…" />
             <SearchableSelect label="Language" value={language} onChange={setLanguage}
@@ -210,44 +190,19 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
                 placeholder="e.g. growth agency"
                 className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
-                Competitor URL (optional)
-              </label>
-              <input value={competitorUrl} onChange={(e) => setCompetitorUrl(e.target.value)}
-                placeholder="e.g. competitor.com"
-                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
-            </div>
           </div>
 
           {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
-
-          {/* What we check visibility across */}
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted">
-            <span>Checks your visibility across</span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
-              <img src="https://www.google.com/s2/favicons?domain=chatgpt.com&sz=32" alt="" className="h-4 w-4" /> ChatGPT
-            </span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
-              <img src="https://www.google.com/s2/favicons?domain=perplexity.ai&sz=32" alt="" className="h-4 w-4" /> Perplexity
-            </span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
-              <img src="https://www.google.com/s2/favicons?domain=claude.ai&sz=32" alt="" className="h-4 w-4" /> Claude
-            </span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
-              <img src="https://www.google.com/s2/favicons?domain=google.com&sz=32" alt="" className="h-4 w-4" /> Google
-            </span>
-          </div>
         </div>
       ) : (
-        <Processing job={job} url={url} country={country} language={language} internal={internal} />
+        <Processing job={job} url={url} country={country} language={language} />
       )}
     </div>
   );
 }
 
-function Processing({ job, url, country, language, internal }: {
-  job: AuditJob | null; url: string; country: string; language: string; internal?: boolean;
+function Processing({ job, url, country, language }: {
+  job: AuditJob | null; url: string; country: string; language: string;
 }) {
   const progress = job?.progress ?? 0;
   const stage = job?.stage ?? "Starting";
@@ -273,19 +228,13 @@ function Processing({ job, url, country, language, internal }: {
         <p className="mt-3 text-sm font-semibold text-paper">{stage}…</p>
         {waking && (
           <p className="mt-2 text-xs text-muted">
-            {internal
-              ? "Waking the server (free tier can take up to ~1 min on first run) — then a full crawl of up to 500 pages."
-              : "Waking the server (free tier can take up to ~1 min on first run) — then crawling your key pages."}
+            Waking the server (free tier can take up to ~1 min on first run) — then crawling up to 50 pages.
           </p>
         )}
       </div>
       <p className="mt-6 max-w-md text-muted">
-        Wait as your site is being audited — auditing{" "}
-        <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}</span>{" "}
-        {internal
-          ? "can take up to 30 minutes for a full crawl of up to 500 pages and the most accurate results."
-          : "can take up to 3 minutes for the most accurate results."}{" "}
-        Please don&apos;t cancel or close this tab midway.
+        Hang tight — we&apos;re crawling and building insights for{" "}
+        <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}.</span>
       </p>
     </div>
   );

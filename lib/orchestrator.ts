@@ -7,32 +7,9 @@ import type {
   KeywordRanking,
   Backlink,
   BacklinkSummary,
-  KeywordOpportunity,
-  LinkGapDomain,
-  SocialProfile,
-  SerpSnapshot,
-  LocalBusinessProfile,
-  GeoReport,
-  ReadinessBreakdown,
-  CompetitorComparison,
-  ContentGapKeyword,
-  TechnicalCrossCheck,
 } from "@/types/audit";
 import { updateJob } from "@/lib/store/jobs";
-import { fetchPageSignals, scrapingBeeConfigured, type PageSignals } from "@/lib/seo/fetcher";
-import { claudeJSON, MODELS } from "@/lib/providers/llm";
-import { captureScreenshot, scrapeSocialProfile, scrapingBeeGoogleSearch } from "@/lib/providers/scrapingbee-extras";
-import {
-  dataForSeoConfigured,
-  googleOrganicSerp,
-  googleAdsSearchVolume,
-  googleBusinessProfile,
-  bingOrganicSerp,
-  yahooOrganicPosition,
-  googleImagesPresence,
-  googleMapsPresence,
-  onPageInstantCheck,
-} from "@/lib/providers/dataforseo-ai";
+import { fetchPageSignals, scrapingBeeConfigured } from "@/lib/seo/fetcher";
 import { pageSpeed } from "@/lib/providers/pagespeed";
 import {
   domainRating,
@@ -42,8 +19,6 @@ import {
   topPagesByBacklinks,
   referringDomains,
   organicKeywords,
-  keywordOpportunities,
-  organicCompetitors,
 } from "@/lib/providers/ahrefs";
 import { analyzeGeo } from "@/lib/geo/analyzer";
 import {
@@ -55,7 +30,6 @@ import {
 import { runAiVisibility } from "@/lib/ai-visibility/engine";
 import { crawlSite } from "@/lib/crawl/crawler";
 import { buildSiteIssues, scoreFromIssues } from "@/lib/crawl/issues";
-import { analyzePage } from "@/lib/crawl/analyzer";
 import { findSiteAuditProject, ahrefsSiteAuditIssues } from "@/lib/providers/ahrefs-siteaudit";
 import { resolveLocation, resolveLanguage } from "@/lib/locations";
 
@@ -72,21 +46,21 @@ function stripTags(html: string): string {
 }
 
 export async function runAudit(job: AuditJob): Promise<void> {
-  const { url, country, language, targetKeyword, competitorUrl } = job.input;
+  const { url, country, language, targetKeyword } = job.input;
   const loc = resolveLocation(country);
   const lang = resolveLanguage(language);
   const domain = domainOf(url);
-  const manualCompetitorDomain = competitorUrl?.trim() ? domainOf(competitorUrl.trim()) : null;
 
-  // Wall-clock budget so the job ALWAYS reaches a terminal state. Internal
-  // audits (full crawl up to 500+ pages, Ahrefs Site Audit/Top Pages, keyword
-  // opportunities, link gap, DataForSEO AI visibility) get up to 30 minutes —
-  // slow but thorough is the goal there. The public tool stays snappy and is
-  // hard-capped at 3 minutes. AUDIT_BUDGET_MS can only lower these, not raise
-  // them past the cap.
+  // Wall-clock budget so the job ALWAYS reaches a terminal state before Vercel
+  // kills the function. Hobby = 60s (default 50s budget); on Pro set
+  // AUDIT_BUDGET_MS=240000 and maxDuration=300 in the run route.
+  // Effective time budget. We HARD-CAP this so an audit can never run for many
+  // minutes (which looks like "spinning"): internal audits get up to 3 min for a
+  // thorough crawl, the public tool stays snappy at 90s. AUDIT_BUDGET_MS can only
+  // lower these, not raise them past the cap.
   const BUDGET_MS = job.input.internal
-    ? Math.min(Number(process.env.AUDIT_BUDGET_MS) || 1_800_000, 1_800_000)
-    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 180_000, 180_000);
+    ? Math.min(Number(process.env.AUDIT_BUDGET_MS) || 180_000, 180_000)
+    : Math.min(Number(process.env.AUDIT_BUDGET_MS) || 120_000, 120_000);
   const startedAt = Date.now();
   const remaining = () => Math.max(0, BUDGET_MS - (Date.now() - startedAt));
 
@@ -112,57 +86,30 @@ export async function runAudit(job: AuditJob): Promise<void> {
     // 1. Fetch + parse the page
     await set("Fetching and parsing your page", 8);
     const signals = await fetchPageSignals(url);
+    console.log(`[audit] main page: url=${signals.finalUrl} status=${(signals as any).status ?? "?"} protected=${!!signals.protected} htmlLen=${signals.html?.length ?? 0} title="${(signals.title || "").slice(0, 60)}"`);
+    if (!signals.html || signals.html.length < 500) {
+      console.error(`[audit] MAIN PAGE NEARLY EMPTY (htmlLen=${signals.html?.length ?? 0}) — likely blocked/JS-shell. On-page checks + crawl will have little to work with.`);
+    }
 
-    // 2. PageSpeed (mobile + desktop) in parallel — free API. Screenshot +
-    // social profile scraping (ScrapingBee) run alongside — all independent of
-    // each other and of the Ahrefs calls that follow.
+    // 2. PageSpeed (mobile + desktop) in parallel — free API
     await set("Measuring Core Web Vitals & PageSpeed", 22);
     const psTimeout = Math.min(20_000, Math.max(6_000, remaining() - 25_000));
-    const socialTargets = Object.entries({
-      Facebook: signals.social.facebook,
-      "X (Twitter)": signals.social.twitter,
-      Instagram: signals.social.instagram,
-      LinkedIn: signals.social.linkedin,
-      YouTube: signals.social.youtube,
-    }).filter(([, u]) => !!u) as [SocialProfile["platform"], string][];
-
-    const [mobile, desktop, screenshot, screenshotMobile, socialResults] = await Promise.all([
+    const [mobile, desktop] = await Promise.all([
       pageSpeed(signals.finalUrl, "mobile", psTimeout).catch(() => emptyPSI("mobile")),
       pageSpeed(signals.finalUrl, "desktop", psTimeout).catch(() => emptyPSI("desktop")),
-      captureScreenshot(signals.finalUrl, {
-        protected: signals.protected,
-        timeoutMs: job.input.internal ? 25_000 : 15_000,
-        viewport: "desktop",
-      }).catch(() => null),
-      captureScreenshot(signals.finalUrl, {
-        protected: signals.protected,
-        timeoutMs: job.input.internal ? 25_000 : 15_000,
-        viewport: "mobile",
-      }).catch(() => null),
-      Promise.allSettled(
-        socialTargets.map(([, url]) => scrapeSocialProfile(url, { allowStealth: job.input.internal }))
-      ),
     ]);
-
-    const social: SocialProfile[] = socialTargets.map(([platform, url], i) => {
-      const r = socialResults[i];
-      const scraped = r.status === "fulfilled" ? r.value : { followers: null, engagement: null, handle: null, available: false };
-      return { platform, url, ...scraped };
-    });
 
     // 3. Ahrefs: keywords + backlinks + domain rating (parallel, resilient)
     await set("Pulling keyword rankings & backlinks", 42);
-    const [kwRaw, drRaw, blStatsRaw, blTopRaw, anchorsRaw, pagesRaw, refDomainsRaw, kwOppRaw, competitorsRaw] =
+    const [kwRaw, drRaw, blStatsRaw, blTopRaw, anchorsRaw, pagesRaw, refDomainsRaw] =
       await Promise.allSettled([
         organicKeywords(domain, loc.countryCode),
         domainRating(domain),
         backlinksStats(domain),
         topBacklinks(domain),
         topAnchors(domain),
-        topPagesByBacklinks(domain, job.input.internal ? 50 : 10),
-        referringDomains(domain, job.input.internal ? 200 : 50),
-        keywordOpportunities(domain, loc.countryCode),
-        organicCompetitors(domain, loc.countryCode, 5),
+        topPagesByBacklinks(domain),
+        referringDomains(domain),
       ]);
 
     const organic = mapKeywords(val(kwRaw, []));
@@ -172,245 +119,13 @@ export async function runAudit(job: AuditJob): Promise<void> {
     const refDoms = val(refDomainsRaw, [] as any[]);
     const blSummary = mapBacklinkSummary(blStats, dr, refDoms);
     const topLinks = mapBacklinks(val(blTopRaw, []));
-    const topPagesRaw = val(pagesRaw, [] as any[]);
-    const opportunities = mapKeywordOpportunities(val(kwOppRaw, []));
-    const autoCompetitors = val(competitorsRaw, [] as any[]);
 
-    // 3b. Link gap: sites linking to a competitor but not to us. Prefer a
-    // user-supplied competitor URL; otherwise use the strongest auto-detected
-    // organic competitor (by shared keywords). Kicked off here (not awaited
-    // yet) so it runs IN PARALLEL with the GEO/SERP/business block below
-    // instead of adding its own sequential delay first.
-    const competitorDomain =
-      manualCompetitorDomain ?? (autoCompetitors[0]?.competitor_domain as string | undefined) ?? null;
-    const linkGapPromise = computeLinkGap(domain, competitorDomain, refDoms, job.input.internal);
-
-    // Competitor comparison ("Your score" vs "Top competitor" vs "Industry
-    // average" on the hero dashboard) — up to 2 REAL lite-audited domains
-    // (manual competitor + top auto-detected, or top 2 auto-detected if none
-    // was given), never a fabricated benchmark number. "Industry average"
-    // only appears once 2+ real data points exist.
-    const competitorDomainsToAudit = Array.from(
-      new Set(
-        [manualCompetitorDomain, autoCompetitors[0]?.competitor_domain, autoCompetitors[1]?.competitor_domain]
-          .filter((d): d is string => !!d && d !== domain)
-      )
-    ).slice(0, 2);
-    // These two are internal-tool only (see below): a competitor lite-audit
-    // fetches a THIRD-PARTY domain we don't control the responsiveness of —
-    // the single riskiest addition for the public tool's 3-minute budget,
-    // since a slow/protected competitor site eats budget with no way to
-    // predict it in advance. The public tool's hero simply won't show the
-    // Industry Average / Top Competitor row; the internal tool (30-min
-    // budget) can afford it.
-    const competitorScoresPromise = job.input.internal
-      ? Promise.all(competitorDomainsToAudit.map((d) => auditCompetitorLite(d, targetKeyword)))
-      : Promise.resolve(competitorDomainsToAudit.map(() => null));
-
-    // Content Gap: keywords the competitor ranks for that we don't rank for AT
-    // ALL — distinct from Keyword Opportunities (our own near-misses) and
-    // Link Gap (backlinks, not keywords). Reuses organicKeywords(), just
-    // called against the competitor domain and diffed against our own set —
-    // no new Ahrefs endpoint needed. Internal-only for the same budget reason
-    // as above (one more parallel branch is cheap on its own, but Updates
-    // 52-53 added several of these at once and their CUMULATIVE weight was
-    // still too much for the public tool's budget on a real, heavy site).
-    const contentGapPromise = job.input.internal && competitorDomain
-      ? organicKeywords(competitorDomain, loc.countryCode, 50).catch(() => [])
-      : Promise.resolve([] as any[]);
-
-    // 4. GEO analysis (Claude + web-search citation probe) — run in parallel
-    // with the SERP snapshot, real Google Ads volume, Business Profile
-    // lookup, and the link gap above. All independent of each other.
+    // 4. GEO analysis (Claude + web-search citation probe)
     await set("Analysing Generative Engine Optimization (GEO)", 60);
     const probeQueries = organic.slice(0, 3).map((k) => k.keyword);
     if (probeQueries.length === 0 && targetKeyword) probeQueries.push(targetKeyword);
-    if (probeQueries.length === 0) {
-      probeQueries.push(await guessNicheQuery(signals, domain, country));
-    }
-
-    // Pick the keyword for the real Google SERP snapshot: the user's target
-    // keyword first, else the top keyword opportunity, else the top organic
-    // keyword, else the same generic fallback GEO uses.
-    const serpKeyword =
-      targetKeyword?.trim() ||
-      opportunities[0]?.keyword ||
-      organic[0]?.keyword ||
-      probeQueries[0];
-
-    // Best-effort business-name guess for the Google Business Profile lookup:
-    // the part of the page <title> before a separator, else the domain stem.
-    const businessNameGuess = (() => {
-      const t = (signals.title ?? "").split(/[|\-–·]/)[0]?.trim();
-      return t && t.length > 1 ? t : domain.split(".")[0];
-    })();
-
-    const dfsReady = dataForSeoConfigured() && !!loc.locationCode;
-    // Maps only makes sense as a signal when the site actually looks like a
-    // local/physical business — reuse the same heuristic driving the Local
-    // category checks rather than firing it for every SaaS/global brand.
-    const looksLocal = !!signals.hasLocalBusinessSchema || (!!signals.hasAddress && !!signals.hasPhone);
-    // Secondary SERP engines (Bing/Yahoo/Images/Maps) and the On-Page
-    // cross-check are internal-tool only. Each one is individually
-    // timeout-bounded, but Updates 52-53 added several of these plus the
-    // competitor lite-audit and content gap all onto the SAME public-tool
-    // budget, and the cumulative weight was still too much on a real,
-    // protected e-commerce site (confirmed by a repeat "stopped responding"
-    // failure after the individual per-call bounds were already in place).
-    // Public tool: fast and reliable, core signals only. Internal tool: full
-    // depth, 30-minute budget can afford all of it.
-    const extrasEnabled = job.input.internal;
-
-    const [
-      geo, serpRawDfs, businessRaw, adsVolume, linkGap, competitorScoresRaw,
-      contentGapRaw, bingRaw, yahooPosition, imagesPresence, mapsPresence, onPageRaw,
-    ] = await Promise.all([
-      analyzeGeo(signals, domain, probeQueries),
-      dfsReady
-        ? withTimeout(googleOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
-        : Promise.resolve(null),
-      dfsReady
-        ? withTimeout(googleBusinessProfile(businessNameGuess, loc.locationCode!, lang.languageCode), 15_000).catch(() => null)
-        : Promise.resolve(null),
-      dfsReady
-        ? withTimeout(googleAdsSearchVolume([serpKeyword], loc.locationCode!), 12_000).catch(() => [])
-        : Promise.resolve([]),
-      withTimeout(linkGapPromise, 15_000).catch(() => ({ competitor: competitorDomain, domains: [] })),
-      withTimeout(competitorScoresPromise, 22_000).catch(() => competitorDomainsToAudit.map(() => null)),
-      withTimeout(contentGapPromise, 15_000).catch(() => []),
-      dfsReady && extrasEnabled
-        ? withTimeout(bingOrganicSerp(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
-        : Promise.resolve(null),
-      dfsReady && extrasEnabled
-        ? withTimeout(yahooOrganicPosition(serpKeyword, loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => null)
-        : Promise.resolve(null),
-      dfsReady && extrasEnabled
-        ? withTimeout(googleImagesPresence(domain.split(".")[0], loc.locationCode!, lang.languageCode, domain), 15_000).catch(() => undefined)
-        : Promise.resolve(undefined),
-      dfsReady && extrasEnabled && looksLocal
-        ? withTimeout(googleMapsPresence(businessNameGuess, loc.locationCode!, lang.languageCode, businessNameGuess), 15_000).catch(() => undefined)
-        : Promise.resolve(undefined),
-      dataForSeoConfigured() && extrasEnabled
-        ? withTimeout(onPageInstantCheck(signals.finalUrl), 20_000).catch(() => null)
-        : Promise.resolve(null),
-    ]);
-
-    // Fallback: if DataForSEO's SERP call failed or found nothing at all
-    // (no organic results — not just "you're not ranking"), try ScrapingBee's
-    // Google Search API before giving up on the SERP Snapshot entirely. Real
-    // position + PAA either way; featured-snippet/knowledge-panel detection
-    // stays DataForSEO-only (not a confirmed field on ScrapingBee's schema —
-    // see lib/providers/scrapingbee-extras.ts).
-    let serpRaw = serpRawDfs;
-    if ((!serpRaw || serpRaw.topResults.length === 0) && remaining() > 25_000) {
-      const sbSerp = await withTimeout(
-        scrapingBeeGoogleSearch(serpKeyword, loc.countryCode, domain, lang.languageCode),
-        15_000
-      ).catch(() => null);
-      if (sbSerp && sbSerp.topResults.length > 0) {
-        serpRaw = {
-          yourPosition: sbSerp.yourPosition,
-          hasFeaturedSnippet: false,
-          featuredSnippetIsYours: false,
-          hasPeopleAlsoAsk: sbSerp.hasPeopleAlsoAsk,
-          hasKnowledgePanel: false,
-          topResults: sbSerp.topResults,
-        };
-      }
-    }
-
-    const serpSnapshot: SerpSnapshot | undefined = serpRaw
-      ? {
-          keyword: serpKeyword,
-          searchVolume: adsVolume[0]?.searchVolume ?? null,
-          cpc: adsVolume[0]?.cpc ?? null,
-          yourPosition: serpRaw.yourPosition,
-          hasFeaturedSnippet: serpRaw.hasFeaturedSnippet,
-          featuredSnippetIsYours: serpRaw.featuredSnippetIsYours,
-          hasPeopleAlsoAsk: serpRaw.hasPeopleAlsoAsk,
-          hasKnowledgePanel: serpRaw.hasKnowledgePanel,
-          topResults: serpRaw.topResults,
-          bingPosition: bingRaw?.yourPosition ?? null,
-          yahooPosition: yahooPosition ?? null,
-          imagesPresence,
-          mapsPresence,
-        }
-      : undefined;
-
-    // Local Business Profile — framed as an ISSUE when not found (not just an
-    // empty section), per instruction. A miss here means "not found with this
-    // business name at this location", not a certain "does not exist" — the
-    // lookup has no street address to disambiguate, only a name + country.
-    const localBusiness: LocalBusinessProfile = businessRaw
-      ? businessRaw.found
-        ? {
-            checked: true, found: true,
-            name: businessRaw.name, rating: businessRaw.rating,
-            reviewCount: businessRaw.reviewCount, category: businessRaw.category,
-          }
-        : {
-            checked: true, found: false,
-            issue: {
-              title: "No Google Business Profile found",
-              recommendation: `Create or verify a Google Business Profile for ${businessNameGuess}.`,
-              reason:
-                "A Business Profile is often the single highest-leverage local SEO signal — it directly powers your presence in Google Maps and the local pack, and helps AI answer engines confirm you're a real, active local business.",
-            },
-          }
-      : { checked: false, found: false };
-
-    // Content Gap: keywords the competitor ranks for that WE don't rank for at
-    // all. Diffed client-side against our own organic-keywords set — no new
-    // Ahrefs endpoint, just a second call to organicKeywords() for the
-    // competitor domain (already fetched above, in parallel with everything else).
-    const ourKeywordSet = new Set(organic.map((k) => k.keyword.toLowerCase()));
-    const contentGap: ContentGapKeyword[] = competitorDomain
-      ? (contentGapRaw as any[])
-          .filter((it) => it?.keyword && !ourKeywordSet.has(String(it.keyword).toLowerCase()))
-          .sort((a, b) => (b?.volume ?? 0) - (a?.volume ?? 0))
-          .slice(0, 15)
-          .map((it) => ({
-            keyword: it.keyword,
-            searchVolume: it.volume ?? null,
-            competitorPosition: it.best_position ?? 0,
-            competitorDomain,
-          }))
-      : [];
-
-    // Technical cross-check: compare our own crawler's homepage read against
-    // DataForSEO On-Page API's independent read of the same page. Any
-    // disagreement is surfaced, not silently resolved — see Update 51.
-    const technicalCrossCheck: TechnicalCrossCheck | undefined = onPageRaw
-      ? {
-          checked: true,
-          fields: [
-            {
-              field: "title",
-              ours: signals.title ?? "(none)",
-              dataForSeo: onPageRaw.title ?? "(none)",
-              agrees: (signals.title ?? "").trim() === (onPageRaw.title ?? "").trim(),
-            },
-            {
-              field: "metaDescription",
-              ours: signals.metaDescription ?? "(none)",
-              dataForSeo: onPageRaw.metaDescription ?? "(none)",
-              agrees: (signals.metaDescription ?? "").trim() === (onPageRaw.metaDescription ?? "").trim(),
-            },
-            {
-              field: "canonical",
-              ours: signals.canonical ?? "(none)",
-              dataForSeo: onPageRaw.canonical ?? "(none)",
-              agrees: (signals.canonical ?? "").trim() === (onPageRaw.canonical ?? "").trim(),
-            },
-            {
-              field: "h1Count",
-              ours: String(signals.h1?.length ?? 0),
-              dataForSeo: String(onPageRaw.h1Count),
-              agrees: (signals.h1?.length ?? 0) === onPageRaw.h1Count,
-            },
-          ],
-        }
-      : { checked: false, fields: [] };
+    if (probeQueries.length === 0) probeQueries.push(`best ${domain.split(".")[0]} services ${country}`);
+    const geo = await analyzeGeo(signals, domain, probeQueries);
 
     // 5. Run checks + scoring
     await set("Scoring your site", 72);
@@ -435,23 +150,6 @@ export async function runAudit(job: AuditJob): Promise<void> {
     const categories = scoreCategories(checks);
     const overall = overallScore(categories);
     const recommendations = buildRecommendations(checks);
-    const readiness = computeReadiness(categories);
-
-    const competitorScores: CompetitorComparison["topCompetitor"][] = competitorDomainsToAudit.map((d, i) => {
-      const score = competitorScoresRaw[i];
-      return score != null ? { domain: d, overall: score } : null;
-    });
-    const realCompetitorScores = competitorScores.filter((c): c is { domain: string; overall: number } => !!c);
-    const competitorComparison: CompetitorComparison | undefined = realCompetitorScores.length
-      ? {
-          yourScore: overall.score,
-          topCompetitor: realCompetitorScores.reduce((a, b) => (b.overall > a.overall ? b : a)),
-          industryAverage:
-            realCompetitorScores.length >= 2
-              ? Math.round(realCompetitorScores.reduce((s, c) => s + c.overall, 0) / realCompetitorScores.length)
-              : null,
-        }
-      : undefined;
 
     // 5b. Kick off AI Visibility (DataForSEO) IN PARALLEL with the crawl. They are
     // independent, so running them together means AI visibility is never starved
@@ -495,13 +193,10 @@ export async function runAudit(job: AuditJob): Promise<void> {
         }
         if (!siteIssues) {
           // Decide how to crawl. ScrapingBee (stealth) can bypass Cloudflare/WAF
-          // per page, but each page is a full browser render (~10-20s). The
-          // external tool's 3-minute budget only fits a small sample, so we
-          // seed it with Ahrefs' top-pages-by-backlinks (fetched above) rather
-          // than a blind sample — budget goes to the pages that actually carry
-          // link equity/traffic first. The internal tool's 30-minute budget can
-          // realistically fit a near-full 500-page stealth crawl, so its sample
-          // cap is raised right up to the page ceiling instead of a small slice.
+          // per page, but each page is a full browser render (~10-20s), so a big
+          // protected site can't be fully crawled inside one request. When bypass
+          // is enabled we therefore crawl a SMALL representative SAMPLE so the
+          // audit always COMPLETES with real multi-page data instead of timing out.
           const proxyEnabled = process.env.CRAWL_VIA_SCRAPINGBEE === "true" && scrapingBeeConfigured();
           const useProxy = proxyEnabled && !!signals.protected;
           const proxyMode = (process.env.SCRAPINGBEE_PROXY_MODE as "premium" | "stealth") || "stealth";
@@ -509,19 +204,20 @@ export async function runAudit(job: AuditJob): Promise<void> {
           const baseMax = job.input.internal
             ? (Number(process.env.CRAWL_MAX_PAGES_INTERNAL) || 500)
             : (Number(process.env.CRAWL_MAX_PAGES) || 50);
+          // When ScrapingBee may be used (any page could need slow stealth), cap
+          // to a small sample so the run fits the time budget. Direct (unprotected)
+          // sites keep the full page count.
           const sampleCap = job.input.internal
-            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 500) // 30 min budget: aim for the full crawl
-            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 10);          // 3 min budget: small, seeded sample
+            ? (Number(process.env.PROXY_CRAWL_MAX_PAGES_INTERNAL) || 20)
+            : (Number(process.env.PROXY_CRAWL_MAX_PAGES) || 10);
           const maxPages = proxyEnabled ? Math.min(baseMax, sampleCap) : baseMax;
-          const seedUrls = topPagesRaw.map((p: any) => p?.url).filter((u: any): u is string => !!u);
 
           const crawl = await withTimeout(
             crawlSite(signals.finalUrl, {
               deadlineMs: crawlBudget,
               maxPages,
               proxy: useProxy ? proxyMode : "none",
-              concurrency: useProxy ? (job.input.internal ? 8 : 6) : 5,
-              seedUrls,
+              concurrency: useProxy ? 6 : 5,
             }),
             crawlBudget
           );
@@ -533,31 +229,18 @@ export async function runAudit(job: AuditJob): Promise<void> {
             truncated: crawl.truncated, score: sc.score, grade: sc.grade,
             checkedCount: sc.checkedCount, notCheckedCount: sc.notCheckedCount,
           };
+          console.log(`[audit] crawl done: proxy=${useProxy ? proxyMode : "none"} protected=${!!signals.protected} discovered=${crawl.discovered} crawled=${crawl.crawled} pages=${crawl.pages.length} issues=${siteIssues.length} score=${sc.score} checked=${sc.checkedCount} notChecked=${sc.notCheckedCount}`);
+          if (crawl.pages.length === 0) {
+            console.error(`[audit] CRAWL RETURNED 0 PAGES for ${signals.finalUrl} — no real issues will show. Likely blocked (Cloudflare/WAF) or all fetches failed. Check [scrapingbee]/[crawl] lines above.`);
+          }
         }
-      } catch { /* crawl skipped; core report still completes */ }
-    }
-
-    // GUARANTEE: the Technical SEO Audit / drill-down section must never
-    // silently disappear just because the full multi-page crawl was skipped
-    // (budget too tight) or failed (network/proxy error) — both are caught
-    // above and previously left `siteIssues` undefined with no fallback,
-    // which meant the crawl-based section could vanish even while the
-    // single-page "Issues Found" checks above it still showed failures.
-    // Falling back to a single-page analysis of the homepage (data we already
-    // have in hand — `signals` — no extra fetch) means there's always at
-    // least one real, verifiable page in the drill-down.
-    if (!siteIssues) {
-      try {
-        const homePage = analyzePage(signals.finalUrl, 200, signals.html);
-        siteIssues = buildSiteIssues([homePage]);
-        const sc = scoreFromIssues(siteIssues);
-        siteScore = { score: sc.score, grade: sc.grade };
-        crawlMeta = {
-          source: "homepage-only", discovered: 1, crawled: 1,
-          truncated: true, score: sc.score, grade: sc.grade,
-          checkedCount: sc.checkedCount, notCheckedCount: sc.notCheckedCount,
-        };
-      } catch { /* even this failed — genuinely nothing to show, leave undefined */ }
+      } catch (err: any) {
+        // Was silently swallowed before — now surfaced so we can see WHY a crawl
+        // produced no data (this is the usual cause of "no real results").
+        console.error(`[audit] CRAWL FAILED for ${signals?.finalUrl}: ${err?.stack || err?.message || err}`);
+      }
+    } else {
+      console.warn(`[audit] crawl SKIPPED — only ${crawlBudget}ms budget left (need >12000). AI/on-page still run.`);
     }
 
     // Reconcile the headline with the crawl. The on-page `overall` reflects only
@@ -573,15 +256,11 @@ export async function runAudit(job: AuditJob): Promise<void> {
       meta: {
         url,
         finalUrl: signals.finalUrl,
-        pageTitle: signals.title ?? undefined,
         country,
         countryCode: loc.countryCode,
         language,
         languageCode: lang.languageCode,
         targetKeyword,
-        competitorUrl: competitorUrl?.trim() || undefined,
-        screenshotDesktop: screenshot ?? undefined,
-        screenshotMobile: screenshotMobile ?? undefined,
         fetchedAt: new Date().toISOString(),
       },
       overall: {
@@ -600,25 +279,16 @@ export async function runAudit(job: AuditJob): Promise<void> {
         organic,
         paid,
         trafficFromSearch: estimateTraffic(organic),
-        opportunities,
-        contentGap,
       },
       backlinks: {
         summary: blSummary,
         top: topLinks,
-        topPages: mapTopPages(topPagesRaw),
+        topPages: mapTopPages(val(pagesRaw, [])),
         topAnchors: mapAnchors(val(anchorsRaw, [])),
         geographies: deriveGeographies(refDoms),
-        linkGap,
       },
       performance: { mobile, desktop },
       geo,
-      social,
-      serpSnapshot,
-      localBusiness,
-      technicalCrossCheck,
-      readiness,
-      competitorComparison,
       ...(siteIssues ? { siteIssues } : {}),
       ...(crawlMeta ? { crawlMeta } : {}),
     };
@@ -627,6 +297,9 @@ export async function runAudit(job: AuditJob): Promise<void> {
 
     // 6. Await the AI Visibility result that has been running in parallel with the crawl.
     const aiVisibility: any = await aiPromise;
+    try {
+      console.log(`[audit] ai-visibility: engine=${aiVisibility?.engine ?? "?"} present=${aiVisibility?.aiOverview?.present ?? "?"} prompts=${aiVisibility?.prompts?.length ?? aiVisibility?.answers?.length ?? 0} score=${aiVisibility?.score ?? "?"} brandMentions=${aiVisibility?.brandMentionCount ?? "?"}`);
+    } catch { /* logging only */ }
 
     await updateJob(job.id, {
       status: "done",
@@ -667,133 +340,7 @@ function emptyPSI(strategy: "mobile" | "desktop") {
   };
 }
 
-function mapKeywordOpportunities(items: any[]): KeywordOpportunity[] {
-  return items
-    .slice(0, 20)
-    .map((it) => ({
-      keyword: it?.keyword ?? "",
-      position: it?.best_position ?? 0,
-      searchVolume: it?.volume ?? null,
-      difficulty: it?.keyword_difficulty ?? null,
-      url: it?.best_position_url ?? undefined,
-    }))
-    .filter((k) => k.keyword);
-}
-
-// Sites linking to a competitor domain but not to the audited domain — a
-// concrete outreach list, not just "you have fewer backlinks". Best-effort:
-// any failure (no competitor found, Ahrefs call fails) returns an empty list
-// rather than breaking the audit.
-async function computeLinkGap(
-  domain: string,
-  competitorDomain: string | null,
-  ourRefDomains: any[],
-  internal?: boolean
-): Promise<{ competitor: string | null; domains: LinkGapDomain[] }> {
-  if (!competitorDomain || competitorDomain === domain) {
-    return { competitor: competitorDomain, domains: [] };
-  }
-  try {
-    const competitorRefDomains = await referringDomains(competitorDomain, internal ? 200 : 50);
-    const ours = new Set(
-      ourRefDomains.map((d: any) => String(d?.refdomain ?? "").toLowerCase()).filter(Boolean)
-    );
-    const gap = (competitorRefDomains as any[])
-      .filter((d) => {
-        const host = String(d?.refdomain ?? "").toLowerCase();
-        return host && !ours.has(host);
-      })
-      .sort((a, b) => (b?.domain_rating ?? 0) - (a?.domain_rating ?? 0))
-      .slice(0, 5)
-      .map((d) => ({
-        domain: String(d?.refdomain ?? ""),
-        domainRating: d?.domain_rating ?? null,
-        linksToCompetitor: competitorDomain,
-      }));
-    return { competitor: competitorDomain, domains: gap };
-  } catch {
-    return { competitor: competitorDomain, domains: [] };
-  }
-}
-
-// When a domain has no Ahrefs keyword history at all (new domain, or was
-// hitting the date bug fixed in Update 54) AND no target keyword was given,
-// the old fallback was a generic, unnatural template
-// ("best {domain-stem} services {country}") that real buyers never actually
-// search — e.g. "best kuda services Nigeria" instead of "best banking app in
-// Nigeria". This asks Claude to infer the actual category from the homepage
-// and produce ONE natural query real buyers would type. Best-effort: any
-// failure falls back to the old template rather than blocking the audit.
-async function guessNicheQuery(signals: PageSignals, domain: string, country: string): Promise<string> {
-  const fallback = `best ${domain.split(".")[0]} services ${country}`;
-  try {
-    const text = signals.html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 3000);
-    const result = await claudeJSON<{ query: string }>({
-      model: MODELS.fast,
-      system: "You identify what category of business a website is, then write ONE short, natural Google search query a real person in that market would type to find the best option in that category — not a template with the brand name jammed in.",
-      prompt: `Domain: ${domain}\nCountry: ${country}\nHomepage text: """${text}"""\n\nReturn JSON: {"query": "<a short, natural query like 'best banking app in Nigeria' or 'top project management software', appropriate to this business's actual category and country>"}`,
-      maxTokens: 150,
-      timeoutMs: 10_000,
-    });
-    return result.query?.trim() || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function computeReadiness(categories: { category: string; score: number }[]): ReadinessBreakdown {
-  const avg = (names: string[]) => {
-    const scores = categories.filter((c) => names.includes(c.category)).map((c) => c.score);
-    return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-  };
-  const technical = avg(["Usability", "Performance", "Other"]);
-  const content = avg(["On-Page SEO", "Social", "Local"]);
-  const aiVisibility = avg(["GEO", "Links"]);
-  const overall = Math.round((technical + content + aiVisibility) / 3);
-
-  const grade = (n: number) => (n >= 85 ? "excellent" : n >= 70 ? "good" : n >= 50 ? "fair" : "weak");
-  const weakest = [
-    { label: "technical foundations", score: technical },
-    { label: "on-page content", score: content },
-    { label: "AI visibility", score: aiVisibility },
-  ].sort((a, b) => a.score - b.score)[0];
-  const summary =
-    `Averaging ${grade(overall)} technical, content, and AI-visibility readiness. ` +
-    `${weakest.label} is the biggest opportunity right now, at ${weakest.score}/100.`;
-
-  return { technical, content, aiVisibility, overall, summary };
-}
-
-// Fast, single-page comparison score for a competitor domain — no crawl, no
-// independent PageSpeed/GEO calls (would double the cost/time of every audit
-// that has a competitor). Real on-page/technical checks only, so the score is
-// genuinely computed, not fabricated — just a lighter-weight comparison than
-// the full audit given to the primary domain.
-async function auditCompetitorLite(url: string, targetKeyword?: string): Promise<number | null> {
-  try {
-    const signals = await withTimeout(fetchPageSignals(url), 20_000);
-    if (!signals) return null;
-    const stubPerf = { mobile: emptyPSI("mobile"), desktop: emptyPSI("desktop") };
-    const stubGeo: GeoReport = {
-      llmReadableScore: 50, renderedContentRatio: 50, hasLlmsTxt: false,
-      hasIdentitySchema: false, hasOrganizationSchema: false, authoritySignals: [],
-      aiOverviewCitations: [], googleAiSearchPresence: false,
-    };
-    const checks = runChecks(signals, stubPerf, stubGeo, targetKeyword);
-    const categories = scoreCategories(checks);
-    return overallScore(categories).score;
-  } catch {
-    return null;
-  }
-}
-
 function mapKeywords(items: any[]): KeywordRanking[] {
-
   // Ahrefs organic-keywords columns: keyword, best_position, volume,
   // sum_traffic, best_position_url, keyword_difficulty, cpc
   return items
