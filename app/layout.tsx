@@ -19,9 +19,9 @@ export const metadata: Metadata = {
   applicationName: "RankTomorrow",
   alternates: { canonical: `${SITE}${PATH}` },
   icons: {
-    icon: [{ url: FAVICON }],
-    shortcut: [{ url: FAVICON }],
-    apple: [{ url: FAVICON }],
+    icon: [{ url: FAVICON, sizes: "1024x1024", type: "image/png" }],
+    shortcut: [{ url: FAVICON, sizes: "1024x1024", type: "image/png" }],
+    apple: [{ url: FAVICON, sizes: "1024x1024", type: "image/png" }],
   },
   openGraph: {
     title: "RankTomorrow — SEO & AI Visibility Audit Tool",

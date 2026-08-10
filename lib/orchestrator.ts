@@ -19,6 +19,7 @@ import type {
   TechnicalCrossCheck,
 } from "@/types/audit";
 import { updateJob } from "@/lib/store/jobs";
+import { sheetsConfigured, pushAuditResultToSheet } from "@/lib/store/sheets";
 import { fetchPageSignals, scrapingBeeConfigured, type PageSignals } from "@/lib/seo/fetcher";
 import { claudeJSON, MODELS } from "@/lib/providers/llm";
 import { captureScreenshot, scrapeSocialProfile, scrapingBeeGoogleSearch } from "@/lib/providers/scrapingbee-extras";
@@ -645,6 +646,22 @@ export async function runAudit(job: AuditJob): Promise<void> {
       report,
       ...(aiVisibility ? { aiVisibility } : {}),
     });
+
+    // Log the score to the "Audit Results" sheet — ONLY for audits tied to an
+    // actual captured lead (never abandoned/anonymous runs), and only the
+    // score fields, nothing else. Best-effort: a Sheets failure never affects
+    // the audit itself, which has already completed and been saved above.
+    if (job.input.leadId && sheetsConfigured()) {
+      pushAuditResultToSheet({
+        leadId: job.input.leadId,
+        domain,
+        overall: readiness.overall,
+        technical: readiness.technical,
+        content: readiness.content,
+        aiVisibility: readiness.aiVisibility,
+        auditedAt: new Date().toISOString(),
+      }).catch(() => { /* best-effort — already logged inside pushAuditResultToSheet */ });
+    }
   } catch (err: any) {
     await updateJob(job.id, {
       status: "error",

@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
         targetKeyword: body.targetKeyword?.trim() || undefined,
         competitorUrl: body.competitorUrl?.trim() || undefined,
         internal: body.internal === true,
+        leadId: typeof body.leadId === "string" && body.leadId.trim() ? body.leadId.trim() : undefined,
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

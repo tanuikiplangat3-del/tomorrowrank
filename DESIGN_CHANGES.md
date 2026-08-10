@@ -881,3 +881,25 @@ You're out of DataForSEO units. Rather than touching dozens of call sites, added
 5. **Business Profile check and Bing/Yahoo/Images/Maps/On-Page cross-check have no substitute wired in** — they simply don't run while the kill switch is on, and each already degrades gracefully (the report sections just don't appear, no fabricated data).
 
 **Net effect:** with `DATAFORSEO_DISABLED=true` set, the tool keeps running fully — AI visibility, SERP data, and keyword volume all still populate real data from Claude/ScrapingBee/Ahrefs — while making zero DataForSEO calls. When units are back, just remove the env var (or set it to `false`) to restore full DataForSEO-backed depth.
+
+---
+
+## Update 58 — Favicon in Google Search results (small fix + explanation)
+
+Investigated the reported favicon issue: shows correctly in browser tabs, still shows a generic grey placeholder in Google search results. Checked the actual configuration — everything was already correct: proper absolute URL (`metadataBase` resolves it to `https://tools.welcometomorrow.io/ranktomorrow/wt-logo-mark.png`), file size well under Google's ~1MB limit (363KB), no robots.txt blocking it, and the meta description shown in the reported screenshot matches the configured description exactly (that part was never broken).
+
+**This isn't a bug — it's Google's own indexing lag.** Google explicitly documents that favicon updates in search results can take anywhere from a few days to a couple of weeks, because Google re-crawls and caches the icon file independently of the page content. Browser tabs fetch it live every time, so they update instantly; Google shows whatever it last cached.
+
+Added one small, genuinely useful improvement anyway: explicit `sizes="1024x1024"` and `type="image/png"` on the favicon declaration in `app/layout.tsx` — Google's own best-practice recommendation for favicon discovery, even though it wasn't strictly required. No other change needed.
+
+---
+
+## Update 59 — Audit scores now logged to a Google Sheet, joined to the captured lead
+
+Previously, an audit's score was never persisted anywhere long-term — the full report lived in Redis for exactly 1 hour, then was gone permanently unless the person requested the emailed PDF (which goes to their inbox only, not stored on our side). The Leads sheet only ever captured identity fields (name/email/company/website), never a score.
+
+Added a second write, scoped exactly as requested — **only for audits tied to an actual captured lead** (never abandoned/anonymous runs), and **no fields beyond the score itself**:
+
+1. **Threaded `leadId` through the whole audit pipeline.** The lead is captured (and the gate closes) BEFORE the audit even starts, so the client now passes the just-captured `leadId` into `/api/audit/start`, stored on `job.input.leadId` (`types/audit.ts`, `app/api/audit/start/route.ts`).
+2. **New `pushAuditResultToSheet()`** (`lib/store/sheets.ts`) — fires once the audit completes, only if `job.input.leadId` is set. Sends exactly: `leadId`, `domain`, the overall readiness score, and the 3 category scores (Technical/Content/AI Visibility), plus a timestamp. Best-effort — a Sheets failure never affects the audit itself, which has already completed and saved by the time this fires.
+3. **Apps Script setup doc updated** (`lib/store/sheets.ts`'s `SHEETS_SETUP` comment) — the same webhook now routes to a second "Audit Results" tab (keyed by a `type: "audit_result"` field in the payload), joinable back to the "Leads" tab by the shared `Lead ID` column. **If the Apps Script was already deployed from before this update, its code needs to be replaced with the new version in the doc comment** — same URL/secret still work, just needs the updated `doPost()` logic to know about the new tab.

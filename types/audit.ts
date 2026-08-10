@@ -365,7 +365,7 @@ export interface AuditJob {
   status: JobStatus;
   stage: string;               // human-readable current stage
   progress: number;            // 0..100
-  input: { url: string; country: string; language: string; targetKeyword?: string; competitorUrl?: string; internal?: boolean };
+  input: { url: string; country: string; language: string; targetKeyword?: string; competitorUrl?: string; internal?: boolean; leadId?: string };
   report?: AuditReport;
   aiVisibility?: AiVisibilityReport;
   error?: string;
