@@ -5,6 +5,8 @@
 // for SEO) and FAQPage JSON-LD structured data.
 import { useState } from "react";
 import { BOOKING_URL } from "./Gate";
+import { BlogCarousel } from "./BlogCarousel";
+import type { BlogArticle } from "@/lib/blog";
 
 const STEPS = [
   {
@@ -68,7 +70,7 @@ function faqSchema() {
   };
 }
 
-export function SeoContent() {
+export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
@@ -133,6 +135,9 @@ export function SeoContent() {
           </p>
         </div>
       </div>
+
+      {/* FROM THE BLOG — latest articles carousel (link juice to the blog) */}
+      <BlogCarousel articles={articles} />
 
       {/* FAQ */}
       <div className="mx-auto mt-24 max-w-3xl">

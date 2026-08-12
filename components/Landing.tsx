@@ -3,8 +3,13 @@ import { AuditApp } from "@/components/AuditApp";
 import { Nav } from "@/components/Nav";
 import { SeoContent } from "@/components/SeoContent";
 import { Footer } from "@/components/Footer";
+import { getLatestArticles } from "@/lib/blog";
 
-export function Landing({ internal = false, initialUrl = "" }: { internal?: boolean; initialUrl?: string }) {
+export async function Landing({ internal = false, initialUrl = "" }: { internal?: boolean; initialUrl?: string }) {
+  // Fetch latest blog articles server-side (public page only). Cached ~1h,
+  // hides itself on failure — never blocks the page.
+  const articles = internal ? [] : await getLatestArticles();
+
   return (
     <main className="relative min-h-screen">
       <Nav />
@@ -20,7 +25,7 @@ export function Landing({ internal = false, initialUrl = "" }: { internal?: bool
       <AuditApp internal={internal} initialUrl={initialUrl} />
 
       {/* SEO / GEO marketing content (public page only) */}
-      {!internal && <SeoContent />}
+      {!internal && <SeoContent articles={articles} />}
 
       <Footer />
     </main>

@@ -903,3 +903,26 @@ Added a second write, scoped exactly as requested — **only for audits tied to 
 1. **Threaded `leadId` through the whole audit pipeline.** The lead is captured (and the gate closes) BEFORE the audit even starts, so the client now passes the just-captured `leadId` into `/api/audit/start`, stored on `job.input.leadId` (`types/audit.ts`, `app/api/audit/start/route.ts`).
 2. **New `pushAuditResultToSheet()`** (`lib/store/sheets.ts`) — fires once the audit completes, only if `job.input.leadId` is set. Sends exactly: `leadId`, `domain`, the overall readiness score, and the 3 category scores (Technical/Content/AI Visibility), plus a timestamp. Best-effort — a Sheets failure never affects the audit itself, which has already completed and saved by the time this fires.
 3. **Apps Script setup doc updated** (`lib/store/sheets.ts`'s `SHEETS_SETUP` comment) — the same webhook now routes to a second "Audit Results" tab (keyed by a `type: "audit_result"` field in the payload), joinable back to the "Leads" tab by the shared `Lead ID` column. **If the Apps Script was already deployed from before this update, its code needs to be replaced with the new version in the doc comment** — same URL/secret still work, just needs the updated `doPost()` logic to know about the new tab.
+
+---
+
+## Update 60 — "Check our other articles" blog carousel (link juice), above the FAQ
+
+Added a carousel of the latest Welcome Tomorrow blog articles on the public RankTomorrow marketing page, sitting just before the FAQ section, per the build brief.
+
+**Behaviour (Option A — live, self-refreshing):**
+- `lib/blog.ts` fetches the latest posts from the WordPress REST API (`/wp-json/wp/v2/posts?per_page=9&_embed` — one call returns titles, links, dates, featured images, and categories). Cached in-process ~1 hour AND via Next's `revalidate: 3600`, so a brand-new blog post appears automatically within the hour with no redeploy.
+- **Hide-on-failure**: if WordPress is slow, down, or returns anything unexpected, the fetch is caught and returns `[]` (or the last good cache), and the carousel renders nothing at all — it can NEVER throw or block the audit page. Verified the module's failure path is the catch-all return, not an exception.
+- Added a browser-like `User-Agent` + `Accept: application/json` to the fetch, because the single most common reason a WordPress/CDN setup 403s a REST call is a missing/bot-like UA. (Note: the fetch 403s from the build sandbox itself with `x-deny-reason: host_not_allowed` — that's the sandbox egress allowlist, NOT a code problem or a WordPress block; it will work from AWS which has open outbound. Flagged so it isn't mistaken for a bug: if the carousel is ever empty in production, check that the live site's WordPress REST API isn't blocked by a security plugin.)
+
+**UI (`components/BlogCarousel.tsx`):**
+- 3 cards visible on desktop, 2 on tablet, 1 on mobile; left/right arrows advance one card at a time (arrows only appear when there are more articles than fit).
+- Every card is a real `<a href>` to the individual article — passes SEO link equity, not JS-only navigation (this is the "link juice" requirement).
+- "View all articles" link → `https://welcometomorrow.io/blog/` (in the header on desktop, repeated at the bottom on mobile).
+- Card design matches the reference: featured image, category tag, date, bold title, "Read article" — using the existing dark glass-card styling, wtgreen accents, and Outfit type. No new styling system introduced.
+
+**Wiring (`components/Landing.tsx`):**
+- Made `Landing` an async server component that fetches the articles server-side and passes them into `SeoContent`. Public page only — the internal `/seo` view passes `[]` (no marketing content there anyway).
+- `SeoContent` now takes an optional `articles` prop and renders `<BlogCarousel>` immediately before the FAQ block.
+
+**IMPORTANT — this feature was written in a prior session but was never committed/pushed to GitHub (the files existed only in the sandbox as untracked changes) and had never been build-verified. This update recovers it, type-checks it, builds it, and hardens the fetch. It must actually be committed to GitHub and deployed this time.**
