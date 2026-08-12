@@ -8,7 +8,16 @@ import { listLeads } from "@/lib/store/leads";
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get("secret");
+  // Prefer the Authorization header ("Bearer <secret>") — query-string secrets
+  // get written to access/proxy logs and browser history, which is a known
+  // leakage vector (OWASP A09). The ?secret= form is still accepted for
+  // backward compatibility with any existing bookmark, but the header is the
+  // recommended way to call this.
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : null;
+  const secret = bearer ?? req.nextUrl.searchParams.get("secret");
   if (!process.env.INTERNAL_SECRET || secret !== process.env.INTERNAL_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

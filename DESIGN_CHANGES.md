@@ -926,3 +926,28 @@ Added a carousel of the latest Welcome Tomorrow blog articles on the public Rank
 - `SeoContent` now takes an optional `articles` prop and renders `<BlogCarousel>` immediately before the FAQ block.
 
 **IMPORTANT — this feature was written in a prior session but was never committed/pushed to GitHub (the files existed only in the sandbox as untracked changes) and had never been build-verified. This update recovers it, type-checks it, builds it, and hardens the fetch. It must actually be committed to GitHub and deployed this time.**
+
+---
+
+## Update 61 — Security hardening (SSRF, dependency CVEs, rate limiting, internal-tool auth, header-based secret)
+
+Full security pass, implementing the code-level fixes from the assessment. Every finding was verified against the actual code and current CVE data before acting; non-applicable advisories were deliberately NOT "fixed" with breaking upgrades.
+
+**C1 — SSRF guard (was the top risk).** New `lib/security/ssrf.ts`: resolves any user-submitted URL's hostname to its real IP(s) and rejects private / loopback / link-local / reserved ranges — most importantly the cloud metadata endpoint `169.254.169.254` — before connecting. Only http/https allowed; credentials-in-URL rejected; redirects followed MANUALLY so every hop is re-validated (a public URL can 302 to an internal one). Wired into `lib/seo/fetcher.ts` (`safeFetch` now uses `safeFetchGuarded`, which also covers the robots.txt/llms.txt/sitemap aux fetches) and enforced again at the entry point in `app/api/audit/start/route.ts` (bad URL rejected before a job is even created). ScrapingBee calls were already safe (fixed trusted host, target URL as a parameter). Verified with a 10-case IP-range test (metadata endpoint + all private ranges blocked; real public IPs allowed).
+
+**H1 — Next.js bumped 14.2.33 -> 14.2.35** (the patched release for the current 14.2.x line per Next.js's own Dec 2025 advisory). Verified against code that the headline max-severity RCE (CVE-2025-55182/66478) does NOT apply — it requires Server Actions, which this app uses none of (no `"use server"`, no `experimental.serverActions`). The `npm audit` flags for GHSA-p9j2-gv94-2wf4 (SSRF in rewrites) and GHSA-955p-x3mx-jcvp (Server Function disclosure) were confirmed NON-APPLICABLE: the former needs a `rewrites()`/`redirects()` rule building a hostname from request input (this app has zero rewrites/redirects), the latter needs Server Actions. Did NOT run `npm audit fix --force`, which would have pushed a breaking Next 16 upgrade over advisories that can't affect this configuration.
+
+**postcss bumped to 8.5.23** (latest, includes all three sourceMappingURL hardenings). Build-time-only dependency that only ever processes our own Tailwind CSS — the advisories require processing untrusted CSS, so it was never actually exposed; patched anyway to keep `npm audit` clean.
+
+**H2 — rate limiting.** New `middleware.ts` caps `POST /api/audit/start` (10 per 10 min per IP) and `POST /api/lead` (20 per 10 min per IP) via Upstash Redis's REST API. Prevents scripted abuse running up paid-API spend or using the tool to hammer third-party sites. FAILS OPEN — if Redis is unreachable or unconfigured, real users are never blocked by a limiter error.
+
+**H3 — internal-tool auth gate.** The `/seo` internal tool was previously protected only by an unlisted URL (security-by-obscurity). Now gated in `middleware.ts`: visit `/seo?key=<INTERNAL_SECRET>` once to set a signed, httpOnly cookie (30-day), then the team stays unlocked on that device with no key in the URL and no mid-session lockout; anyone without the cookie is redirected to the public tool. The gate only activates when `INTERNAL_SECRET` is set (won't accidentally brick the tool if unset). The background worker `/api/audit/run` was already correctly secret-gated.
+
+**M1 — leads export secret via header.** `app/api/leads/route.ts` now accepts `Authorization: Bearer <secret>` (preferred — headers aren't logged like query strings are), keeping `?secret=` working for backward compatibility.
+
+**Build:** `tsc --noEmit` clean; `npm run build` succeeds and now shows a compiled `ƒ Middleware` entry.
+
+**STILL REQUIRES YOU (AWS console — cannot be done from code):**
+1. IMDSv2 enforcement on the ECS task (biggest multiplier on how dangerous any SSRF gap is). Needs verification/enforcement via AWS CLI.
+2. Secrets in plain ECS env vars -> AWS Secrets Manager (rotation + access audit).
+3. Cloudflare is DNS-only (grey cloud) = no WAF in front. A WAF would add defense-in-depth for DoS/abuse on top of the app-level rate limiting.

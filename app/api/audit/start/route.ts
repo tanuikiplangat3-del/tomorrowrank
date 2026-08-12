@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import type { AuditJob } from "@/types/audit";
 import { saveJob, updateJob, isRedisConfigured } from "@/lib/store/jobs";
+import { assertSafeUrl } from "@/lib/security/ssrf";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,20 @@ export async function POST(req: NextRequest) {
     const url = (body.url ?? "").trim();
     if (!url || !/\./.test(url)) {
       return NextResponse.json({ error: "Please enter a valid URL." }, { status: 400 });
+    }
+
+    // SSRF guard at the entry point: reject URLs that resolve to private/
+    // reserved addresses (or use a non-http scheme) BEFORE creating a job, so
+    // an attacker can't use the tool to reach internal services or the cloud
+    // metadata endpoint. Defense-in-depth — the fetcher enforces this again on
+    // every hop, but failing fast here is cleaner and cheaper.
+    try {
+      await assertSafeUrl(url);
+    } catch {
+      return NextResponse.json(
+        { error: "That URL can't be audited. Please enter a valid public website address." },
+        { status: 400 }
+      );
     }
 
     // Deployed audits need shared storage across serverless invocations.

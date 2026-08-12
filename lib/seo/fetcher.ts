@@ -2,6 +2,8 @@
 // Fetches the page + auxiliary files and extracts signals using regex/string
 // parsing (no heavy DOM dep — keeps the serverless bundle small).
 
+import { safeFetchGuarded } from "@/lib/security/ssrf";
+
 export interface PageSignals {
   finalUrl: string;
   status: number;
@@ -61,10 +63,13 @@ const UA =
   "Mozilla/5.0 (compatible; TomorrowRankBot/1.0; +https://welcometomorrow.io)";
 
 async function safeFetch(url: string, opts: RequestInit = {}) {
-  return fetch(url, {
-    redirect: "follow",
+  // SSRF guard: validates the URL (and every redirect hop) against private /
+  // loopback / link-local / reserved IP ranges before connecting, and blocks
+  // non-http(s) schemes. Prevents a user-submitted audit URL from reaching the
+  // cloud metadata endpoint or internal services. Throws SsrfError if unsafe.
+  return safeFetchGuarded(url, {
     headers: { "User-Agent": UA, ...(opts.headers ?? {}) },
-    signal: AbortSignal.timeout(30_000),
+    timeoutMs: 30_000,
     ...opts,
   });
 }
