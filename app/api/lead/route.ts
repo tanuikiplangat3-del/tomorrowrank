@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { promises as dns } from "dns";
 import { saveLead, type Lead } from "@/lib/store/leads";
 import { sheetsConfigured, pushLeadToSheet } from "@/lib/store/sheets";
+import { attioConfigured, pushLeadToAttio } from "@/lib/store/attio";
 
 export const runtime = "nodejs";
 
@@ -84,6 +85,15 @@ export async function POST(req: NextRequest) {
     if (sheetsConfigured()) {
       void pushLeadToSheet(lead).catch((err) => {
         console.error("[lead] Sheets push failed (lead saved to backup):", err);
+      });
+    }
+
+    // Hand off to Attio (via the n8n webhook: Person/Company/Deal + Biz-Dev
+    // Slack notify), also in the background — same reasoning as the Sheets
+    // push: never delay the user, the lead is already safe in Redis.
+    if (attioConfigured()) {
+      void pushLeadToAttio(lead).catch((err) => {
+        console.error("[lead] Attio push failed (lead saved to backup):", err);
       });
     }
 
