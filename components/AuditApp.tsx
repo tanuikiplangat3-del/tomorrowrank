@@ -78,7 +78,16 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
         const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
         const j: AuditJob = await readJson(r);
         setJob(j);
-        if (j.status === "done") { stopPoll(); setPhase("done"); }
+        if (j.status === "done") {
+          stopPoll();
+          setPhase("done");
+          // Measurement team's conversion event — fired ONLY here, at the real
+          // moment the audit completes and the result is available (per their
+          // spec: "Only fire this when the audit has actually completed").
+          // Deliberately NOT fired on the refresh-restore path below, so
+          // reloading the results page can't double-count the conversion.
+          gtmEvent("seo_audit_complete", { tool_name: "seo_audit" });
+        }
         if (j.status === "error") { stopPoll(); setError(j.error || "Audit failed"); setPhase("error"); }
       } catch (e: any) {
         stopPoll();

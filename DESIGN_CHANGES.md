@@ -951,3 +951,38 @@ Full security pass, implementing the code-level fixes from the assessment. Every
 1. IMDSv2 enforcement on the ECS task (biggest multiplier on how dangerous any SSRF gap is). Needs verification/enforcement via AWS CLI.
 2. Secrets in plain ECS env vars -> AWS Secrets Manager (rotation + access audit).
 3. Cloudflare is DNS-only (grey cloud) = no WAF in front. A WAF would add defense-in-depth for DoS/abuse on top of the app-level rate limiting.
+
+---
+
+## Update 62 — Measurement team's "seo_audit_complete" conversion event (the tracking gap fix)
+
+Implements the exact dataLayer event the measurement team specified in their
+"WT Web dataLayer Implementation Instructions" doc — item 2, "Successful SEO
+Audit". This closes the conversion-tracking gap that originally prompted the
+"do the devs need to rebuild the tool?" question: the answer was no, because the
+tool already had GTM installed and a `gtmEvent()` helper — it was only missing
+the completion push.
+
+- Added `gtmEvent("seo_audit_complete", { tool_name: "seo_audit" })` in
+  `components/AuditApp.tsx`, fired at the exact point the audit transitions to
+  `done` during live polling (line ~81), matching the team's spec: "Only fire
+  this when the audit has actually completed and the result is available."
+- Deliberately NOT fired on the refresh-restore path (the effect that re-opens a
+  finished audit from a `?job=` URL), so reloading the results page cannot
+  double-count the conversion — which is exactly the "clicks counted more than
+  once" problem the team flagged as making clicks unreliable.
+- No new import (gtmEvent was already used in this file for `audit_start`).
+- The tool was already emitting `audit_start` (funnel entry) and `generate_lead`
+  (lead form submit); this adds the true completion/conversion signal.
+
+**Note on the other two events in the team's doc:** items 1 (Newsletter Signup)
+and 3 (Contact Form Submitted / Typeform) live on the MAIN welcometomorrow.io
+website, not in RankTomorrow — those are for whoever manages the main site and
+are out of scope for this repo.
+
+**GTM side (not code — for whoever manages GTM):** create a Custom Event trigger
+matching event name `seo_audit_complete`, and fire a GA4 event/conversion tag off
+it. The tool now pushes the event; GTM needs the matching trigger+tag to turn it
+into a GA4 conversion. For the most reliable count (immune to ad-blockers/closed
+tabs) a server-side GA4 Measurement Protocol call could be added later, but the
+dataLayer event is what the team asked for and is now live.
