@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ranktomorrow",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+
+  // Required by the adapter. Without this, Node built-ins used by Next and by
+  // our dependencies (pdf-lib, the Anthropic SDK) are not available.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  // Cloudflare meters CPU time, not wall-clock. An audit runs 1-3 minutes but
+  // spends almost all of it awaiting Ahrefs / ScrapingBee / Anthropic, which
+  // costs zero CPU. The default ceiling is 30s; we raise it so a heavy report
+  // (PDF generation, large JSON parsing) cannot trip limit error 1102.
+  "limits": { "cpu_ms": 300000 },
+
+  "observability": { "enabled": true },
+
+  // Non-secret config only. Everything sensitive is set with
+  // `wrangler secret put` so it never lands in git.
+  "vars": {
+    "NODE_ENV": "production",
+    "NEXT_PUBLIC_BASE_URL": "https://tools.welcometomorrow.io/ranktomorrow",
+    "RUN_AUDIT_INLINE": "true",
+    "AUDIT_BUDGET_MS": "180000",
+    "CRAWL_VIA_SCRAPINGBEE": "true",
+    "DATAFORSEO_DISABLED": "true"
+  }
+}
