@@ -1,6 +1,16 @@
 // POST /api/audit/run  { jobId }
-// Internal background worker. Invoked (fire-and-forget) by /api/audit/start.
-// Protected by an internal secret so it can't be triggered externally.
+//
+// Executes an audit that /api/audit/start has already persisted. The BROWSER
+// calls this and holds the connection open for the whole run, which is what
+// allows a 1-3 minute audit on Cloudflare Workers (no duration limit while the
+// client is connected; ctx.waitUntil() would only give 30s).
+//
+// Authorisation, since a browser cannot hold INTERNAL_SECRET:
+//   - a server-to-server caller may still present x-internal-secret, OR
+//   - the caller presents a jobId that exists and is still "queued".
+// jobIds are random UUIDs, so they are unguessable, and the "queued" check
+// makes this single-use: once an audit starts, the same id cannot re-trigger
+// it. That closes the replay/amplification risk the secret was guarding.
 import { NextRequest, NextResponse } from "next/server";
 import { getJob, updateJob } from "@/lib/store/jobs";
 import { runAudit } from "@/lib/orchestrator";
@@ -11,13 +21,20 @@ export const maxDuration = 300; // long crawls; Render ignores, Vercel Pro honor
 export async function POST(req: NextRequest) {
   try {
     const secret = req.headers.get("x-internal-secret");
-    if (!process.env.INTERNAL_SECRET || secret !== process.env.INTERNAL_SECRET) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const hasSecret =
+      !!process.env.INTERNAL_SECRET && secret === process.env.INTERNAL_SECRET;
 
     const { jobId } = await req.json();
     const job = await getJob(jobId);
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
+    // Without the secret, only an untouched job may be started, and only once.
+    if (!hasSecret && job.status !== "queued") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Claim it immediately so a duplicate call cannot start a second run.
+    await updateJob(job.id, { status: "running", stage: "Starting" });
 
     // AWAIT the audit, holding this request open until it finishes.
     //

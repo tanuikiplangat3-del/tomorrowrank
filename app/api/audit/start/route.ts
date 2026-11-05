@@ -9,17 +9,18 @@ import { assertSafeUrl } from "@/lib/security/ssrf";
 export const runtime = "nodejs";
 
 // On a long-lived server (Render, a VPS, `next start`) we run the audit in the
-// same process — no fragile self-HTTP call, which is what caused jobs to sit at
-// "Queued" and made cold starts feel stuck. Render sets RENDER=true; you can
-// also force it with RUN_AUDIT_INLINE=true.
-function shouldRunInline(): boolean {
-  // Cloudflare Workers can NEVER run it inline. The isolate is destroyed when
-  // the response returns, and ctx.waitUntil() only buys 30 seconds — far short
-  // of a 1-3 minute audit. There, the browser holds /api/audit/run open
-  // instead, which has no duration limit while the client stays connected.
-  if (process.env.CF_WORKER === "true") return false;
-  return !!process.env.RENDER || process.env.RUN_AUDIT_INLINE === "true";
-}
+// The audit always runs in /api/audit/run, driven by the BROWSER, which holds
+// that request open for its full duration.
+//
+// Why not run it here, inline?
+//   Cloudflare Workers destroy the isolate when the response returns, and
+//   ctx.waitUntil() only extends that by 30s — far short of a 1-3 minute audit.
+//   Cloudflare does NOT limit duration while the client stays connected, so the
+//   browser holding /run open is what makes a long audit possible.
+//
+// This is not the old fragile self-HTTP call (server fetching itself, which is
+// what used to leave jobs stuck at "Queued"). The CLIENT makes the request, so
+// there is no server-to-self hop, and the same code path works on Node too.
 
 function baseUrl(req: NextRequest): string {
   // Prefer an explicit public URL; fall back to request origin.
@@ -96,44 +97,9 @@ export async function POST(req: NextRequest) {
 
     await saveJob(job); // throws a clear message if Redis creds are wrong
 
-    if (shouldRunInline()) {
-      // Run the audit in-process, in the background, and return the jobId now.
-      //
-      // IMPORTANT — runtime difference:
-      //   Node (ECS/Docker): the process is long-lived, so a floating promise
-      //     keeps running after the response is sent.
-      //   Cloudflare Workers: the isolate is destroyed the moment the Response
-      //     is returned, which SILENTLY kills any pending promise. A floating
-      //     `void runAudit(job)` leaves the job stuck at "queued" forever.
-      //
-      // ctx.waitUntil() tells the Workers runtime to keep the isolate alive
-      // until the promise settles. Cloudflare bills CPU time, not wall-clock,
-      // and this audit is almost entirely awaiting external APIs, so a 1-3
-      // minute run costs very little against the limit.
-      const { runAudit } = await import("@/lib/orchestrator");
-      const task = runAudit(job).catch((e) =>
-        updateJob(job.id, {
-          status: "error",
-          stage: "Failed",
-          error: e?.message ?? "Audit crashed.",
-        })
-      );
+    // Job is persisted; the browser now opens /api/audit/run to execute it.
 
-      // Node only: the process is long-lived so a floating promise completes.
-      void task;
-    } else {
-      // Serverless fallback: trigger the background worker over HTTP (not awaited).
-      void fetch(`${baseUrl(req)}/api/audit/run`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-internal-secret": process.env.INTERNAL_SECRET || "",
-        },
-        body: JSON.stringify({ jobId: job.id }),
-      }).catch(() => {});
-    }
-
-    return NextResponse.json({ jobId: job.id, runInline: shouldRunInline() });
+    return NextResponse.json({ jobId: job.id });
   } catch (err: any) {
     // Always return JSON so the client never sees "Unexpected end of JSON input".
     return NextResponse.json(
