@@ -1,7 +1,6 @@
 // POST /api/audit/run  { jobId }
 // Internal background worker. Invoked (fire-and-forget) by /api/audit/start.
 // Protected by an internal secret so it can't be triggered externally.
-import { runInBackground } from "@/lib/bg";
 import { NextRequest, NextResponse } from "next/server";
 import { getJob, updateJob } from "@/lib/store/jobs";
 import { runAudit } from "@/lib/orchestrator";
@@ -20,17 +19,22 @@ export async function POST(req: NextRequest) {
     const job = await getJob(jobId);
     if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
-    // Run the audit in the background and return immediately so the trigger
-    // request resolves fast. The process stays alive on a long-lived server.
-    // Workers kills floating promises when the response returns.
-    await runInBackground(
-      runAudit(job).catch((e) =>
-        updateJob(job.id, {
-          status: "error",
-          stage: "Failed",
-          error: e?.message ?? "Audit crashed.",
-        })
-      )
+    // AWAIT the audit, holding this request open until it finishes.
+    //
+    // Cloudflare Workers: ctx.waitUntil() only extends execution for 30s after
+    // a response is sent, which is far short of a 1-3 minute audit. But the
+    // docs are explicit that there is NO duration limit while the client stays
+    // connected. So the browser fires this request and leaves it open; the
+    // Worker keeps running for as long as it takes. Progress still reaches the
+    // UI because runAudit writes each stage to Redis, which /status polls.
+    //
+    // Node: identical behaviour, just a long-lived request.
+    await runAudit(job).catch((e) =>
+      updateJob(job.id, {
+        status: "error",
+        stage: "Failed",
+        error: e?.message ?? "Audit crashed.",
+      })
     );
 
     return NextResponse.json({ ok: true });

@@ -143,6 +143,23 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       if (!res.ok) throw new Error(data.error || "Failed to start audit");
       const jobId = data.jobId as string;
       setJobParam(jobId, leadIdRef.current ?? null); // persist so refresh restores audit + lead
+
+      // If the server did not already run the audit in-process, kick off the
+      // worker request and DELIBERATELY leave it open.
+      //
+      // Cloudflare Workers have no duration limit while the client stays
+      // connected, but kill background work ~30s after a response is sent.
+      // Holding this request open is what lets a 1-3 minute audit finish.
+      // We never await it — progress comes from polling /status, which reads
+      // the stages runAudit writes to Redis as it goes.
+      if (data.runInline === false) {
+        void fetch(apiPath("/api/audit/run"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        }).catch(() => {});
+      }
+
       pollJob(jobId);
     } catch (e: any) {
       setError(e.message);

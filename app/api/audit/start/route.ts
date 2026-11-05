@@ -13,6 +13,11 @@ export const runtime = "nodejs";
 // "Queued" and made cold starts feel stuck. Render sets RENDER=true; you can
 // also force it with RUN_AUDIT_INLINE=true.
 function shouldRunInline(): boolean {
+  // Cloudflare Workers can NEVER run it inline. The isolate is destroyed when
+  // the response returns, and ctx.waitUntil() only buys 30 seconds — far short
+  // of a 1-3 minute audit. There, the browser holds /api/audit/run open
+  // instead, which has no duration limit while the client stays connected.
+  if (process.env.CF_WORKER === "true") return false;
   return !!process.env.RENDER || process.env.RUN_AUDIT_INLINE === "true";
 }
 
@@ -114,23 +119,8 @@ export async function POST(req: NextRequest) {
         })
       );
 
-      let keptAlive = false;
-      try {
-        // Only resolves on Workers; throws or returns undefined elsewhere.
-        const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-        const ctx = getCloudflareContext?.()?.ctx as
-          | { waitUntil?: (p: Promise<unknown>) => void }
-          | undefined;
-        if (typeof ctx?.waitUntil === "function") {
-          ctx.waitUntil(task);
-          keptAlive = true;
-        }
-      } catch {
-        // Not running on Cloudflare — fall through to the Node behaviour.
-      }
-
-      // Node: the process stays alive on its own, so nothing more is needed.
-      if (!keptAlive) void task;
+      // Node only: the process is long-lived so a floating promise completes.
+      void task;
     } else {
       // Serverless fallback: trigger the background worker over HTTP (not awaited).
       void fetch(`${baseUrl(req)}/api/audit/run`, {
@@ -143,7 +133,7 @@ export async function POST(req: NextRequest) {
       }).catch(() => {});
     }
 
-    return NextResponse.json({ jobId: job.id });
+    return NextResponse.json({ jobId: job.id, runInline: shouldRunInline() });
   } catch (err: any) {
     // Always return JSON so the client never sees "Unexpected end of JSON input".
     return NextResponse.json(
