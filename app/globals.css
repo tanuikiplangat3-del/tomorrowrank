@@ -132,6 +132,30 @@ body{font-family:"Outfit",system-ui,sans-serif;font-size:16px;line-height:140%;f
   .wt-desc{font-size:20px}
 }
 
+
+/* -- Audit tool card, sits under the hero header -- */
+.rt-tool{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px;
+  max-width:920px;margin:52px auto 0;backdrop-filter:blur(8px);text-align:left}
+.rt-bar{display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.5);
+  border:1px solid var(--line);border-radius:14px;padding:10px;flex-wrap:wrap}
+.rt-bar__field{display:flex;flex:1;align-items:center;gap:8px;padding-left:12px;min-width:200px}
+.rt-bar__input{flex:1;background:transparent;border:0;outline:0;color:#fff;font-size:17px;
+  padding:10px 6px;min-width:0}
+.rt-bar__input::placeholder{color:hsla(0,0%,100%,.4)}
+.rt-fields{display:grid;gap:12px;margin-top:14px;grid-template-columns:1fr}
+.rt-plats{display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;
+  margin-top:22px;color:var(--soft);font-size:14px}
+.rt-plat{display:flex;align-items:center;gap:8px;color:#fff;font-weight:500}
+@media (min-width:640px){.rt-fields{grid-template-columns:repeat(2,1fr)}}
+@media (min-width:1024px){.rt-fields{grid-template-columns:repeat(4,1fr)}}
+
+/* -- Section helpers used by SeoContent -- */
+.wt-eyebrow{font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--yellow);margin-bottom:14px;text-align:center}
+.wt-grid-4{display:grid;gap:18px;grid-template-columns:1fr}
+@media (min-width:640px){.wt-grid-4{grid-template-columns:repeat(2,1fr)}}
+@media (min-width:1024px){.wt-grid-4{grid-template-columns:repeat(4,1fr)}}
+
 /* -- FAQ: acf-faq. Section gradient blue -> black, items are cards. -- */
 .wt-faq{background:linear-gradient(180deg,#2b4dff,#000);overflow:hidden}
 .wt-faq__wrapper{padding-top:138px;padding-bottom:80px}

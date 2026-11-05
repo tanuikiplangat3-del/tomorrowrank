@@ -1,6 +1,6 @@
 "use client";
 // components/SeoContent.tsx : SEO/GEO marketing content rendered below the tool.
-// Follows the Welcome Tomorrow dark aesthetic (glass cards, wtgreen accents,
+// Follows the Welcome Tomorrow theme (real block CSS, brand tokens,
 // Outfit type). Includes an accessible FAQ accordion (answers live in the DOM
 // for SEO) and FAQPage JSON-LD structured data.
 import { useState } from "react";
@@ -74,14 +74,15 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
-    <section className="relative z-10 mx-auto max-w-6xl px-4 py-20 sm:py-28">
+    <>
+      <section className="wt-section"><div className="wt-container">
       {/* FAQ structured data for rich results */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema()) }} />
 
       {/* HOW IT WORKS */}
       <div className="mx-auto max-w-3xl text-center">
-        <span className="text-xs font-bold uppercase tracking-[0.2em] text-wtgreen">How it works</span>
-        <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-paper sm:text-4xl">
+        <span className="wt-eyebrow">How it works</span>
+        <h2 className="wt-title">
           A full analysis in under a minute
         </h2>
         <p className="mt-4 text-lg text-muted">
@@ -94,9 +95,9 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
         {STEPS.map((s) => (
           <div
             key={s.n}
-            className="flex flex-col rounded-xl2 border border-glassBorder bg-glass p-6 backdrop-blur-sm transition hover:border-wtgreen/50"
+            className="wt-card"
           >
-            <span className="font-display text-4xl font-extrabold text-wtgreen/80">{s.n}</span>
+            <span className="wt-card__num">{s.n}</span>
             <h3 className="mt-4 font-display text-lg font-bold text-paper">{s.title}</h3>
             <p className="mt-2 text-sm leading-relaxed text-muted">{s.body}</p>
           </div>
@@ -106,8 +107,8 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
       {/* WHY RANKTOMORROW */}
       <div className="mx-auto mt-24 max-w-3xl">
         <div className="text-center">
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-wtgreen">Why RankTomorrow</span>
-          <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-paper sm:text-4xl">
+          <span className="wt-eyebrow">Why RankTomorrow</span>
+          <h2 className="wt-title">
             Why RankTomorrow?
           </h2>
         </div>
@@ -142,8 +143,8 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
       {/* FAQ */}
       <div className="mx-auto mt-24 max-w-3xl">
         <div className="text-center">
-          <span className="text-xs font-bold uppercase tracking-[0.2em] text-wtgreen">FAQ</span>
-          <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-paper sm:text-4xl">
+          <span className="wt-eyebrow">FAQ</span>
+          <h2 className="wt-title">
             Frequently asked questions
           </h2>
           <p className="mt-4 text-lg text-muted">
@@ -155,7 +156,7 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
           {FAQS.map((f, i) => {
             const isOpen = openFaq === i;
             return (
-              <div key={i} className="overflow-hidden rounded-xl2 border border-glassBorder bg-glass">
+              <div key={i} className={`wt-faq__item${isOpen ? " is-active" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setOpenFaq(isOpen ? null : i)}
@@ -163,9 +164,7 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
                   aria-expanded={isOpen}
                 >
                   <span className="font-display text-base font-semibold text-paper sm:text-lg">{f.q}</span>
-                  <span className={`shrink-0 text-wtgreen transition-transform duration-300 ${isOpen ? "rotate-45" : ""}`}>
-                    +
-                  </span>
+                  
                 </button>
                 <div
                   className="grid transition-all duration-300 ease-out"
@@ -181,12 +180,15 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
         </div>
       </div>
 
-      {/* CLOSING CTA */}
-      <div className="mx-auto mt-24 max-w-4xl overflow-hidden rounded-xl2 border border-wtgreen/30 bg-wtgreen/[0.07] p-8 text-center sm:p-12">
-        <h2 className="font-display text-3xl font-extrabold leading-tight text-paper sm:text-4xl">
+      </div></section>
+
+      {/* CLOSING CTA — acf-cta-v2: blue->red panel, dark pattern, blurred orb */}
+      <section className="wt-cta"><div className="wt-container">
+      <div className="wt-cta__wrapper"><div className="wt-cta__box">
+        <h2 className="wt-cta__title">
           Move beyond one-off audits
         </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-muted">
+        <p className="wt-cta__description">
           RankTomorrow currently audits up to 50 pages per run. If your website is larger than 50 pages,
           or is highly secured (for example, protected by Cloudflare), talk with our experts and we will
           audit the full site for you.
@@ -195,11 +197,12 @@ export function SeoContent({ articles = [] }: { articles?: BlogArticle[] }) {
           href={BOOKING_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="mt-8 inline-flex items-center gap-2 rounded-lg bg-wtgreen px-8 py-4 text-base font-bold text-white transition hover:bg-wtgreenDeep"
+          className="c-button c-button--white"
         >
-          Talk with one of our experts →
+          Talk with one of our experts
         </a>
-      </div>
-    </section>
+      </div></div>
+      </div></section>
+    </>
   );
 }

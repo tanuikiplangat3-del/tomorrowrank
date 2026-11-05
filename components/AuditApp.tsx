@@ -159,28 +159,30 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
   }
 
   return (
-    <div className="relative z-10 mx-auto max-w-3xl px-4 pb-16 pt-10 sm:pt-16">
+    <section className="wt-hero">
+      <div className="wt-container">
       {gateOpen && (
         <LeadGate
           url={url}
           onVerified={(id, mail) => { leadIdRef.current = id; setLeadId(id); setLeadEmail(mail); setVerified(true); setGateOpen(false); void runAudit(); }}
         />
       )}
-      {/* Heading — white, no underline (dark canvas) */}
-      <div className="text-center">
-        <h1 className="font-display text-4xl font-extrabold leading-[1.05] tracking-tight text-paper sm:text-6xl">
-          Free, Simple SEO &amp; GEO Audit Tool
-        </h1>
-        <p className="mt-5 text-lg font-medium text-muted">
-          Analyze your website&apos;s readiness for AI search engines. Get instant insights on how well
-          your content is optimized for generative AI platforms.
-        </p>
+      {/* Hero — acf-hero-banner-v4: centred header, max-width 468px */}
+      <div className="wt-hero__header">
+        <div className="wt-hero__label">SEO &amp; GEO Audit Tool</div>
+        <h1 className="wt-hero__title">Free, Simple<br />SEO &amp; GEO Audit</h1>
+        <div className="wt-hero__description">
+          <p>
+            Analyze your website&apos;s readiness for AI search engines.<br />
+            <strong>That&apos;s our thing.</strong>
+          </p>
+        </div>
       </div>
 
       {phase === "input" || phase === "error" ? (
-        <div className="mt-10">
-          <div className="flex flex-col gap-3 rounded-xl2 border border-glassBorder bg-glass p-2 backdrop-blur-sm sm:flex-row sm:items-center sm:p-1.5">
-            <div className="flex flex-1 items-center gap-2 pl-3">
+        <div className="rt-tool">
+          <div className="rt-bar">
+            <div className="rt-bar__field">
               {url.trim().length > 2 && (
                 <img
                   src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(prettyHost(url))}&sz=64`}
@@ -194,19 +196,19 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && start()}
                 placeholder="Example.com"
-                className="flex-1 rounded-lg bg-transparent py-3 text-lg text-paper outline-none placeholder:text-white/40"
+                className="rt-bar__input"
               />
             </div>
             <button
               onClick={start}
-              className="rounded-lg bg-wtgreen px-8 py-3 text-base font-bold uppercase tracking-wide text-paper transition hover:bg-wtgreenDeep"
+              className="c-button c-button--blue"
             >
-              Audit →
+              Audit
             </button>
           </div>
 
           {/* Country / language / keyword / competitor selectors */}
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rt-fields">
             <SearchableSelect label="Country" value={country} onChange={setCountry}
               options={COUNTRIES.map((c) => c.country)} placeholder="Search your country…" />
             <SearchableSelect label="Language" value={language} onChange={setLanguage}
@@ -217,7 +219,7 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
               </label>
               <input value={keyword} onChange={(e) => setKeyword(e.target.value)}
                 placeholder="e.g. growth agency"
-                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
+                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-blue" />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
@@ -225,25 +227,25 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
               </label>
               <input value={competitorUrl} onChange={(e) => setCompetitorUrl(e.target.value)}
                 placeholder="e.g. competitor.com"
-                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-wtgreen" />
+                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-blue" />
             </div>
           </div>
 
           {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
 
           {/* What we check visibility across */}
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted">
+          <div className="rt-plats">
             <span>Checks your visibility across</span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
+            <span className="rt-plat">
               <img src="https://www.google.com/s2/favicons?domain=chatgpt.com&sz=32" alt="" className="h-4 w-4" /> ChatGPT
             </span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
+            <span className="rt-plat">
               <img src="https://www.google.com/s2/favicons?domain=perplexity.ai&sz=32" alt="" className="h-4 w-4" /> Perplexity
             </span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
+            <span className="rt-plat">
               <img src="https://www.google.com/s2/favicons?domain=claude.ai&sz=32" alt="" className="h-4 w-4" /> Claude
             </span>
-            <span className="flex items-center gap-1.5 font-semibold text-paper">
+            <span className="rt-plat">
               <img src="https://www.google.com/s2/favicons?domain=google.com&sz=32" alt="" className="h-4 w-4" /> Google
             </span>
           </div>
@@ -251,7 +253,8 @@ export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boo
       ) : (
         <Processing job={job} url={url} country={country} language={language} internal={internal} />
       )}
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -307,7 +310,7 @@ function Select({ label, value, onChange, options }: {
     <div>
       <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition focus:border-wtgreen">
+        className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition focus:border-blue">
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
