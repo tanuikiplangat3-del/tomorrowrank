@@ -1,85 +1,101 @@
 "use client";
-// components/Nav.tsx — top navigation with a mobile hamburger (collapsed on small
-// screens, expands on tap). Desktop shows inline links.
-import { useState } from "react";
+// components/Nav.tsx — the Welcome Tomorrow header, ported from the theme.
+//
+// Source of every value: public/wp-content/themes/welcometomorrow/build/css/app.css
+// and src/components/layout/header.html in the Astro export.
+//   .o-header            fixed, padding 44px -> 10px when scrolled, gradient :after
+//   .o-header__logo      width 124px
+//   .o-header__row       desktop gap 33px; below 1024px a full-height slide-in panel
+//   .c-main-menu__list   desktop row, gap 33px, items 16px/700
+//   .o-header__button    yellow ONLY below 1024px; transparent + white border above
+// Menu order is the real DOM order, not alphabetical.
+import { useEffect, useState } from "react";
 
-const LINKS = [
-  { label: "Services", href: "https://welcometomorrow.io/services" },
-  { label: "Expertise", href: "https://welcometomorrow.io/expertise" },
-  { label: "About us", href: "https://welcometomorrow.io/about" },
-  { label: "Blog", href: "https://welcometomorrow.io/blog" },
+const MENU = [
+  { label: "Services", href: "https://welcometomorrow.io/", caret: true },
+  { label: "Expertise", href: "https://welcometomorrow.io/", caret: true },
+  { label: "About us", href: "https://welcometomorrow.io/about-us/", caret: false },
+  { label: "Blog", href: "https://welcometomorrow.io/blog/", caret: false },
+  { label: "Resources", href: "https://welcometomorrow.io/", caret: true },
+  { label: "Join Us", href: "https://welcometomorrow.io/join-us/", caret: false },
 ];
+
+// The real header button points at the Typeform, not /contact-us/.
+const TALK_HREF = "https://welcometomorrow.typeform.com/to/CeIvTBF5";
 
 export function Nav() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 30);
+    onScroll();
+    addEventListener("scroll", onScroll, { passive: true });
+    // The theme sizes the mobile panel with --vh so it survives mobile browser chrome.
+    const setVh = () =>
+      document.documentElement.style.setProperty("--vh", `${innerHeight * 0.01}px`);
+    setVh();
+    addEventListener("resize", setVh);
+    return () => {
+      removeEventListener("scroll", onScroll);
+      removeEventListener("resize", setVh);
+    };
+  }, []);
 
   return (
-    <nav className="relative z-30">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5">
-        <a href="https://welcometomorrow.io" className="flex items-center" aria-label="Welcome Tomorrow">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/ranktomorrow/welcome-tomorrow-logo.png"
-            alt="Welcome Tomorrow"
-            width={362}
-            height={117}
-            className="h-9 w-auto md:h-10"
-          />
-        </a>
-
-        {/* Desktop links */}
-        <div className="hidden items-center gap-8 text-sm font-semibold text-paper md:flex">
-          {LINKS.map((l) => (
-            <a key={l.label} href={l.href} className="transition hover:text-wtgreen">{l.label}</a>
-          ))}
-          <a
-            href="https://welcometomorrow.io/contact"
-            className="rounded-lg border border-white/30 px-4 py-2 transition hover:border-wtgreen hover:text-wtgreen"
-          >
-            Let&apos;s talk →
-          </a>
-        </div>
-
-        {/* Mobile hamburger */}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/20 text-paper md:hidden"
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
-        >
-          <div className="relative h-4 w-5">
-            <span className={`absolute left-0 block h-0.5 w-5 bg-current transition-all duration-300 ${open ? "top-1.5 rotate-45" : "top-0"}`} />
-            <span className={`absolute left-0 top-1.5 block h-0.5 w-5 bg-current transition-all duration-300 ${open ? "opacity-0" : "opacity-100"}`} />
-            <span className={`absolute left-0 block h-0.5 w-5 bg-current transition-all duration-300 ${open ? "top-1.5 -rotate-45" : "top-3"}`} />
-          </div>
-        </button>
-      </div>
-
-      {/* Mobile menu panel */}
-      {open && (
-        <div className="md:hidden" style={{ backgroundColor: "#0b100e" }}>
-          <div className="mx-auto flex max-w-6xl flex-col gap-1 border-t border-white/10 px-4 py-3">
-            {LINKS.map((l) => (
-              <a
-                key={l.label}
-                href={l.href}
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-3 text-base font-semibold text-paper transition hover:bg-wtgreen hover:text-white"
-              >
-                {l.label}
-              </a>
-            ))}
-            <a
-              href="https://welcometomorrow.io/contact"
-              onClick={() => setOpen(false)}
-              className="mt-1 rounded-lg bg-wtgreen px-3 py-3 text-center text-base font-bold text-white transition hover:bg-wtgreenDeep"
-            >
-              Let&apos;s talk →
+    <header className={`o-header${scrolled ? " is-scrolled" : ""}`}>
+      <div className="o-header__main">
+        <div className="wt-container">
+          <div className="o-header__logo">
+            <a href="https://welcometomorrow.io/" aria-label="Welcome Tomorrow">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/ranktomorrow/img/logo-anim.gif" alt="Welcome Tomorrow" width={124} height={40} />
             </a>
           </div>
+
+          <button
+            type="button"
+            className="c-burger"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span /><span /><span />
+          </button>
+
+          <div className={`o-header__row${open ? " is-active" : ""}`}>
+            <div className="o-header__menu">
+              <nav className="c-main-menu">
+                <ul className="c-main-menu__list">
+                  {MENU.map((m) => (
+                    <li className="menu-item" key={m.label}>
+                      <a href={m.href}>
+                        {m.label}
+                        {m.caret && (
+                          <svg viewBox="0 0 9 6" width="9" height="6" aria-hidden="true" fill="none">
+                            <path d="M1 1l3.5 3.5L8 1" stroke="currentColor" strokeWidth="1.5"
+                              strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            </div>
+
+            <div className="o-header__button">
+              <a className="c-button c-button--secondary" href={TALK_HREF}>
+                Let&apos;s talk
+                <svg viewBox="0 0 12 11" fill="none" aria-hidden="true">
+                  <path d="M6.5 1L11 5.5L6.5 10M11 5.5H1" stroke="currentColor" strokeWidth="1.8"
+                    strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </a>
+            </div>
+          </div>
         </div>
-      )}
-    </nav>
+      </div>
+    </header>
   );
 }

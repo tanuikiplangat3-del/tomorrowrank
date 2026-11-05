@@ -7,10 +7,10 @@ import type { Grade, CategoryScore } from "@/types/audit";
 
 // Green-forward scale for the dark canvas
 const GRADE_COLOR: Record<string, string> = {
-  A: "#4CA66B", B: "#6FC08A", C: "#9BC846", D: "#E2B340", F: "#F06A5A",
+  A: "#0AA865", B: "#6FC08A", C: "#9BC846", D: "#FFD952", F: "#EF3E3B",
 };
 function gradeColor(g: Grade): string {
-  return GRADE_COLOR[g[0]] ?? "#4CA66B";
+  return GRADE_COLOR[g[0]] ?? "#0AA865";
 }
 
 /** Circular grade gauge. */
@@ -26,7 +26,7 @@ export function ScoreRing({
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, score));
   const dash = (pct / 100) * c;
-  const ringColor = color ?? (score >= 85 ? "#4CA66B" : score >= 70 ? "#9BC846" : score >= 50 ? "#E2B340" : "#F06A5A");
+  const ringColor = color ?? (score >= 85 ? "#0AA865" : score >= 70 ? "#9BC846" : score >= 50 ? "#FFD952" : "#EF3E3B");
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -91,8 +91,8 @@ export function CategoryRadar({ categories }: { categories: CategoryScore[] }) {
       <ResponsiveContainer>
         <RadarChart data={data} outerRadius="72%">
           <PolarGrid stroke="rgba(255,255,255,0.14)" />
-          <PolarAngleAxis dataKey="axis" tick={{ fill: "#B9C2BC", fontSize: 12, fontWeight: 600 }} />
-          <Radar dataKey="score" stroke="#4CA66B" fill="#4CA66B" fillOpacity={0.28} strokeWidth={2} />
+          <PolarAngleAxis dataKey="axis" tick={{ fill: "#B3B3B3", fontSize: 12, fontWeight: 600 }} />
+          <Radar dataKey="score" stroke="#0AA865" fill="#0AA865" fillOpacity={0.28} strokeWidth={2} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

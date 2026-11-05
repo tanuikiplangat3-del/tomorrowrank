@@ -9,10 +9,10 @@ import type { AiVisibilityReport, AiPlatformStat } from "@/types/audit";
 import { BlurGate } from "./Gate";
 
 // Green-led palette on the dark canvas; client brand is always wtgreen.
-const PALETTE = ["#4CA66B", "#9BC846", "#9B8BFF", "#E2B340", "#F06A5A", "#7E8B84"];
+const PALETTE = ["#0AA865", "#9BC846", "#2B4DFF", "#FFD952", "#EF3E3B", "#7E8B84"];
 
 function colorFor(i: number, isClient: boolean) {
-  if (isClient) return "#4CA66B";
+  if (isClient) return "#0AA865";
   return PALETTE[(i % (PALETTE.length - 1)) + 1];
 }
 
@@ -165,9 +165,9 @@ export function AiVisibilitySection({ data }: { data: AiVisibilityReport }) {
           <h3 className="font-display text-lg font-bold text-paper">Overall Sentiment</h3>
           {data.overallSentiment.hasMentions ? (
             <div className="mt-4 space-y-3">
-              <SentimentBar label="Positive" pct={data.overallSentiment.positivePct} color="#4CA66B" />
+              <SentimentBar label="Positive" pct={data.overallSentiment.positivePct} color="#0AA865" />
               <SentimentBar label="Neutral" pct={data.overallSentiment.neutralPct} color="#7E8B84" />
-              <SentimentBar label="Negative" pct={data.overallSentiment.negativePct} color="#F06A5A" />
+              <SentimentBar label="Negative" pct={data.overallSentiment.negativePct} color="#EF3E3B" />
               <p className="pt-2 text-sm text-muted">{data.overallSentiment.summary}</p>
             </div>
           ) : (

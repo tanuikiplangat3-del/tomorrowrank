@@ -2,6 +2,223 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   Welcome Tomorrow design system.
+   Every value below is copied from the theme source, not approximated:
+     colours  global-styles-inline-css.css  (--wp--preset--color--*)
+     fonts    wp-fonts-local.css
+     layout   build/css/app.css
+     blocks   src/styles/wp/acf-<block>-view-style-inline-css.css
+   ========================================================================== */
+
+/* -- Outfit, self-hosted exactly as the theme does -- */
+@font-face{font-family:"Outfit";font-style:normal;font-weight:300;font-display:swap;
+  src:url("/ranktomorrow/fonts/outfit/Outfit-Light.woff2") format("woff2")}
+@font-face{font-family:"Outfit";font-style:normal;font-weight:400;font-display:swap;
+  src:url("/ranktomorrow/fonts/outfit/Outfit-Regular.woff2") format("woff2")}
+@font-face{font-family:"Outfit";font-style:normal;font-weight:500;font-display:swap;
+  src:url("/ranktomorrow/fonts/outfit/Outfit-Medium.woff2") format("woff2")}
+@font-face{font-family:"Outfit";font-style:normal;font-weight:600;font-display:swap;
+  src:url("/ranktomorrow/fonts/outfit/Outfit-SemiBold.woff2") format("woff2")}
+@font-face{font-family:"Outfit";font-style:normal;font-weight:700;font-display:swap;
+  src:url("/ranktomorrow/fonts/outfit/Outfit-Bold.woff2") format("woff2")}
+@font-face{font-family:"Outfit";font-style:normal;font-weight:800;font-display:swap;
+  src:url("/ranktomorrow/fonts/outfit/Outfit-ExtraBold.woff2") format("woff2")}
+
+:root{
+  --black:#000;--white:#fff;--blue:#2B4DFF;--green:#0AA865;--yellow:#FFD952;--red:#EF3E3B;
+  --card:hsla(0,0%,100%,.1);--card-2:hsla(0,0%,100%,.15);--soft:hsla(0,0%,100%,.7);
+  --line:hsla(0,0%,100%,.18);--ease:cubic-bezier(.4,0,.2,1);
+}
+
+/* body{font-size:16px;line-height:140%} — app.css */
+body{font-family:"Outfit",system-ui,sans-serif;font-size:16px;line-height:140%;font-weight:400}
+
+/* .container{max-width:1280px;padding:0 20px} — app.css */
+.wt-container{max-width:1280px;margin:0 auto;width:100%;
+  padding-left:max(20px,env(safe-area-inset-left,0px));
+  padding-right:max(20px,env(safe-area-inset-right,0px))}
+
+/* -- Buttons: .c-button in app.css -- */
+.c-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  border:2px solid transparent;border-radius:10px;cursor:pointer;font-size:16px;font-weight:700;
+  letter-spacing:.05em;line-height:150%;padding:11px 26px;text-align:center;text-transform:uppercase;
+  transition:all .3s var(--ease)}
+.c-button svg{width:12px;height:11px;flex-shrink:0;transition:all .3s var(--ease)}
+.c-button:hover svg{transform:translateX(6px)}
+.c-button--yellow{border-color:var(--yellow);background:var(--yellow);color:#000}
+.c-button--yellow:hover{background:transparent;color:var(--yellow)}
+.c-button--blue{border-color:var(--blue);background:var(--blue);color:#fff}
+.c-button--blue:hover{background:transparent;color:var(--blue)}
+.c-button--white{border-color:#fff;background:#fff;color:#000}
+.c-button--white:hover{background:transparent;color:#fff}
+.c-button--secondary{background:transparent;border-color:#fff;color:#fff}
+.c-button--secondary:hover{background:#fff;color:#000}
+.c-button--sm{font-size:14px;padding:8px 18px}
+.c-button:disabled{opacity:.5;cursor:not-allowed}
+
+/* -- Header: .o-header in app.css. Desktop breakpoint is 1024px. -- */
+.o-header{position:fixed;inset:0 0 auto;z-index:999;padding:44px 0;background:rgba(0,0,0,.3);
+  transition:all .3s var(--ease);padding-top:calc(44px + env(safe-area-inset-top,0px))}
+.o-header.is-scrolled{padding:10px 0;padding-top:calc(10px + env(safe-area-inset-top,0px))}
+.o-header:after{content:"";position:absolute;inset:0 0 auto;height:120%;width:100%;z-index:-1;opacity:0;
+  background:linear-gradient(180deg,#000,rgba(0,0,0,.72) 50%,transparent);transition:all .3s var(--ease)}
+.o-header.is-scrolled:after{opacity:1}
+.o-header__main .wt-container{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.o-header__logo{position:relative;width:124px;z-index:1;flex-shrink:0}
+.o-header__logo a,.o-header__logo img{display:block;width:100%;height:auto}
+.c-burger{cursor:pointer;display:block;height:22px;margin-left:auto;position:relative;width:26px;
+  z-index:1;background:none;border:0;padding:0}
+.c-burger span{display:block;height:2px;left:0;position:absolute;width:100%;background:#fff;
+  transition:all .3s var(--ease)}
+.c-burger span:first-child{top:0}
+.c-burger span:nth-child(2){top:10px}
+.c-burger span:nth-child(3){top:20px}
+.o-header__row{display:flex;flex-direction:column;gap:74px;justify-content:space-between;overflow:hidden;
+  position:absolute;right:-100%;top:0;width:100%;background:#000;height:calc(var(--vh,1vh)*100);
+  padding-bottom:59px;padding-top:90px;transition:all .3s var(--ease)}
+.o-header__row.is-active{right:0}
+.o-header__menu{max-height:500px;overflow:auto}
+.c-main-menu__list{display:flex;flex-direction:column;gap:14px;list-style:none;margin:0;padding:0}
+.c-main-menu__list .menu-item{border-bottom:1px solid #fff;font-size:16px;letter-spacing:.01em;
+  line-height:150%;padding:14px 57px 12px 51px}
+.c-main-menu__list .menu-item>a{font-weight:500;position:relative;display:inline-flex;align-items:center;
+  gap:6px;transition:all .3s var(--ease)}
+.c-main-menu__list .menu-item>a:before{content:"";bottom:-2px;height:2px;left:0;position:absolute;
+  width:100%;background:#fff;transform:scaleX(0);transition:all .3s var(--ease)}
+.c-main-menu__list .menu-item>a:hover:before{transform:scaleX(1)}
+@media (max-width:1023px){
+  .o-header__button .c-button--secondary{min-width:177px;border-color:var(--yellow);
+    background-color:var(--yellow);color:#000;font-size:16px;padding-top:12px;padding-bottom:10px}
+  .o-header__button .c-button--secondary:hover{background-color:#000;color:var(--yellow)}
+}
+@media (min-width:1024px){
+  .c-burger{display:none}
+  .o-header__row{align-items:center;flex-direction:row;gap:33px;justify-content:flex-end;position:static;
+    right:auto;top:auto;width:auto;height:auto;padding:0;background:none;overflow:visible}
+  .c-main-menu__list{align-items:center;flex-direction:row;gap:33px}
+  .c-main-menu__list .menu-item{border-bottom-width:0;padding:0}
+  .c-main-menu__list .menu-item>a{font-weight:700}
+  .o-header__button .c-button--secondary{min-width:177px}
+}
+
+/* -- Hero: acf-hero-banner-v4. Two layers: pattern :after, gradient :before. -- */
+.wt-hero{padding:200px 0 90px;position:relative;z-index:0;overflow:hidden}
+.wt-hero:before{content:"";position:absolute;inset:0;height:100%;width:100%;z-index:-1;
+  background:linear-gradient(180deg,rgba(0,0,0,.43),#000)}
+.wt-hero:after{content:"";position:absolute;inset:0;height:100%;width:100%;z-index:-2;
+  background-image:url("/ranktomorrow/img/hero-pattern-yellow.png");
+  background-position:50%;background-repeat:no-repeat;background-size:cover}
+.wt-hero__header{margin-left:auto;margin-right:auto;max-width:468px;text-align:center}
+.wt-hero__label{background-color:hsla(0,0%,100%,.2);border-radius:30px;display:inline-block;
+  font-size:16px;font-weight:700;line-height:110%;margin-bottom:24px;padding:13px 30px 9px;
+  text-align:center;text-transform:uppercase;color:var(--yellow)}
+.wt-hero__title{font-size:45px;font-weight:700;line-height:110%}
+.wt-hero__description{margin-top:20px;font-size:17px;line-height:140%;color:var(--soft)}
+.wt-hero__description strong{color:#fff}
+@media (min-width:768px){.wt-hero__title{font-size:60px}.wt-hero__description{font-size:20px}}
+
+/* -- Section + card scale: acf-text-cards-v3 / acf-icon-cards-v2 -- */
+.wt-section{padding:60px 0;position:relative}
+.wt-title{font-size:30px;font-weight:700;line-height:110%;margin-bottom:30px}
+.wt-desc{font-size:17px;letter-spacing:.01em;line-height:140%;color:var(--soft)}
+.wt-card{background-color:hsla(0,0%,100%,.1);border-radius:20px;padding:44px 21px}
+.wt-card--sm{border-radius:15px;padding:23px 16px 23px 25px}
+.wt-card__title{font-size:20px;font-weight:700;line-height:110%}
+.wt-card__desc{color:hsla(0,0%,100%,.8);font-size:14px;letter-spacing:.01em;line-height:140%}
+@media (min-width:768px){
+  .wt-section{padding:90px 0}
+  .wt-title{font-size:45px;margin-bottom:50px}
+  .wt-desc{font-size:20px}
+}
+
+/* -- FAQ: acf-faq. Section gradient blue -> black, items are cards. -- */
+.wt-faq{background:linear-gradient(180deg,#2b4dff,#000);overflow:hidden}
+.wt-faq__wrapper{padding-top:138px;padding-bottom:80px}
+.wt-faq__title{font-size:30px;font-weight:700;line-height:110%;margin:0 auto 34px;
+  max-width:75vw;text-align:center}
+.wt-faq__item{background-color:hsla(0,0%,100%,.15);border-radius:10px;margin-bottom:15px;
+  transition:all .3s var(--ease)}
+.wt-faq__item:last-child{margin-bottom:0}
+.wt-faq__item:not(.is-active):hover{background-color:hsla(0,0%,100%,.25)}
+.wt-faq__q{cursor:pointer;font-size:15px;font-weight:700;line-height:110%;
+  padding:20px 86px 20px 20px;position:relative;width:100%;text-align:left;background:none;
+  border:0;color:inherit}
+.wt-faq__q:before,.wt-faq__q:after{content:"";position:absolute;background-color:#fff;
+  transition:transform .3s var(--ease)}
+.wt-faq__q:before{height:3px;right:16px;top:27px;width:16px}
+.wt-faq__q:after{height:16px;right:23px;top:21px;width:3px}
+.wt-faq__item.is-active .wt-faq__q:after{transform:rotate(90deg)}
+.wt-faq__a{font-size:14px;line-height:140%;padding:0 20px 20px}
+@media (min-width:768px){
+  .wt-faq__wrapper{padding-top:159px;padding-bottom:148px}
+  .wt-faq__title{font-size:45px;margin-bottom:65px;max-width:none}
+  .wt-faq__item{border-radius:15px}
+  .wt-faq__q{font-size:16px;padding:28px 36px}
+  .wt-faq__q:before{right:22px;top:36px;width:18px}
+  .wt-faq__q:after{height:18px;right:30px;top:29px}
+  .wt-faq__a{font-size:16px;padding:0 36px 28px}
+}
+
+/* -- CTA: acf-cta-v2. Blue->red panel, dark pattern overlay, blurred orb. -- */
+.wt-cta{overflow:hidden;padding:23px 0;position:relative}
+.wt-cta:before{content:"";border-radius:100%;height:150px;position:absolute;right:0;top:40%;
+  width:150px;z-index:-1;background:linear-gradient(180deg,#2b4dff,#0aa865);
+  filter:blur(80px);mix-blend-mode:screen}
+.wt-cta__wrapper{border-radius:15px;overflow:hidden;padding:57px 16px 43px;position:relative;
+  text-align:center;z-index:0;background:linear-gradient(90deg,#2b4dff,#ef3e3b 110.15%)}
+.wt-cta__wrapper:after{content:"";background-image:url("/ranktomorrow/img/cta-dark-pattern.png");
+  background-position:50%;height:100%;left:0;position:absolute;top:0;width:100%;z-index:-1}
+.wt-cta__box{margin:0 auto;max-width:947px;position:relative}
+.wt-cta__title{font-size:45px;font-weight:700;line-height:110%;padding:0 20px}
+.wt-cta__description{font-size:17px;line-height:140%;margin-top:43px}
+.wt-cta__buttons{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:26px}
+@media (min-width:768px){
+  .wt-cta{padding:172px 0}
+  .wt-cta:before{height:350px;right:-170px;top:30%;width:350px;filter:blur(170px)}
+  .wt-cta__wrapper{padding-top:135px;padding-bottom:135px}
+  .wt-cta__wrapper:after{background-repeat:no-repeat;background-size:cover}
+}
+
+/* -- Footer: .o-footer in app.css. No border-top. -- */
+.o-footer{overflow:hidden;padding-top:38px;padding-bottom:38px;position:relative;isolation:isolate}
+.o-footer:after{content:"";border-radius:100%;bottom:-202px;height:471px;position:absolute;
+  right:-263px;width:471px;z-index:0;background:linear-gradient(180deg,#2b4dff,#0aa865);
+  filter:blur(200px);mix-blend-mode:lighten;opacity:.5;transform:translateZ(0)}
+.o-footer .wt-container{position:relative;z-index:1}
+.o-footer__logo{margin-bottom:42px}
+.o-footer__logo img{display:block;width:204px;height:auto}
+.o-footer__middle-row{display:flex;gap:45px;justify-content:space-between;flex-wrap:wrap}
+.middle-col--text{display:flex;flex-direction:column;gap:16px;justify-content:space-between;
+  text-align:left;max-width:435px}
+.middle-col--menus{width:fit-content}
+.o-footer__menus{display:flex;gap:58px;justify-content:flex-end;flex-wrap:wrap}
+.o-footer__big-description{font-size:22px;font-weight:600;line-height:138%;max-width:30ch}
+.o-footer__small-description{color:#fff;font-size:15px;font-weight:600;line-height:150%;max-width:40ch}
+.c-footer-menu__title{font-size:18px;font-weight:600;line-height:150%;margin-bottom:23px}
+.c-footer-menu__list{list-style:none;margin:0;padding:0}
+.c-footer-menu__list li{margin-bottom:10px}
+.c-footer-menu__list li:last-child{margin-bottom:0}
+.c-footer-menu__list li a{font-size:14px;font-weight:700;letter-spacing:.01em;line-height:150%;
+  position:relative;transition:opacity .2s var(--ease)}
+.c-footer-menu__list li a:hover{opacity:.65}
+.c-social-menu{display:flex;gap:22px;margin-top:62px;align-items:center}
+.c-social-menu__link{transition:opacity .2s var(--ease);display:block}
+.c-social-menu__link:hover{opacity:.65}
+.c-social-menu svg{width:26px;height:26px}
+.o-footer__bottom{position:relative;z-index:1;margin-top:56px}
+.o-footer__bottom-row{align-items:center;display:flex;gap:4px;justify-content:space-between;
+  border-top:2px solid #fff;padding-top:31px;flex-wrap:wrap}
+.o-footer__bottom-copyright{color:hsla(0,0%,100%,.5);font-size:14px;font-weight:700;
+  letter-spacing:.01em;line-height:150%}
+.o-footer__bottom-link{color:hsla(0,0%,100%,.5);font-size:14px;font-weight:700;letter-spacing:.01em;
+  line-height:150%;transition:all .3s var(--ease)}
+.o-footer__bottom-link:hover{color:#fff}
+@media (min-width:768px){.o-footer{padding-top:36px;padding-bottom:36px}
+  .o-footer:after{bottom:-321px;height:638px;right:-286px;width:638px}}
+@media (max-width:980px){.o-footer__middle-row{flex-direction:column}}
+
+
 :root {
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-body: 'Outfit', system-ui, sans-serif;
@@ -24,7 +241,7 @@ select option {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: #000; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(76,166,107,0.5); }
+::-webkit-scrollbar-thumb:hover { background: rgba(10,168,101,0.5); }
 
 /* Spinner */
 @keyframes spin { to { transform: rotate(360deg); } }

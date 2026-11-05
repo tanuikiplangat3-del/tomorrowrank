@@ -5,6 +5,9 @@
 // segment, so it never shadows them.
 import { Landing } from "@/components/Landing";
 
-export default function SiteAudit({ params }: { params: { site: string } }) {
-  return <Landing internal={false} initialUrl={params.site} />;
+export default async function SiteAudit(
+  { params }: { params: Promise<{ site: string }> },
+) {
+  const { site } = await params;
+  return <Landing internal={false} initialUrl={site} />;
 }

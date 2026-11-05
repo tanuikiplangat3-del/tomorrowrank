@@ -3,6 +3,9 @@
 // for the internal (ungated) tool at /seo.
 import { Landing } from "@/components/Landing";
 
-export default function InternalSiteAudit({ params }: { params: { site: string } }) {
-  return <Landing internal={true} initialUrl={params.site} />;
+export default async function InternalSiteAudit(
+  { params }: { params: Promise<{ site: string }> },
+) {
+  const { site } = await params;
+  return <Landing internal={true} initialUrl={site} />;
 }

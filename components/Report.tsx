@@ -97,7 +97,7 @@ export function Report({
             <ScoreStat dotColor="#7E8B84" label="Industry Average" value={comp.industryAverage} />
           )}
           {comp?.topCompetitor && (
-            <ScoreStat dotColor="#4CA66B" label="Top Competitor" value={comp.topCompetitor.overall} sub={comp.topCompetitor.domain} />
+            <ScoreStat dotColor="#0AA865" label="Top Competitor" value={comp.topCompetitor.overall} sub={comp.topCompetitor.domain} />
           )}
         </div>
 
@@ -491,7 +491,7 @@ function DetailGrid({ report }: { report: AuditReport }) {
                     <Stat label="INP (ms)" value={p.inp} />
                   </div>
                   <p className="mt-2 text-xs font-semibold"
-                    style={{ color: p.passesCoreWebVitals ? "#4CA66B" : "#F06A5A" }}>
+                    style={{ color: p.passesCoreWebVitals ? "#0AA865" : "#EF3E3B" }}>
                     {p.passesCoreWebVitals === null ? "CWV: insufficient field data"
                       : p.passesCoreWebVitals ? "Core Web Vitals: Passing" : "Core Web Vitals: Failing"}
                   </p>
