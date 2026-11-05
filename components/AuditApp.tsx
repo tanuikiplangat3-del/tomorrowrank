@@ -286,8 +286,8 @@ function Processing({ job, url, country, language, internal }: {
         {waking && (
           <p className="mt-2 text-xs text-muted">
             {internal
-              ? "Waking the server (free tier can take up to ~1 min on first run) — then a full crawl of up to 500 pages."
-              : "Waking the server (free tier can take up to ~1 min on first run) — then crawling your key pages."}
+              ? "Starting up — then a full crawl of up to 500 pages."
+              : "Starting up — then crawling your key pages."}
           </p>
         )}
       </div>

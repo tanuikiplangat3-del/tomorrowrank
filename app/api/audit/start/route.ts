@@ -92,16 +92,45 @@ export async function POST(req: NextRequest) {
     await saveJob(job); // throws a clear message if Redis creds are wrong
 
     if (shouldRunInline()) {
-      // Long-lived server: run in-process (background). The process stays alive,
-      // so the promise keeps running after we return the jobId.
+      // Run the audit in-process, in the background, and return the jobId now.
+      //
+      // IMPORTANT — runtime difference:
+      //   Node (ECS/Docker): the process is long-lived, so a floating promise
+      //     keeps running after the response is sent.
+      //   Cloudflare Workers: the isolate is destroyed the moment the Response
+      //     is returned, which SILENTLY kills any pending promise. A floating
+      //     `void runAudit(job)` leaves the job stuck at "queued" forever.
+      //
+      // ctx.waitUntil() tells the Workers runtime to keep the isolate alive
+      // until the promise settles. Cloudflare bills CPU time, not wall-clock,
+      // and this audit is almost entirely awaiting external APIs, so a 1-3
+      // minute run costs very little against the limit.
       const { runAudit } = await import("@/lib/orchestrator");
-      void runAudit(job).catch((e) =>
+      const task = runAudit(job).catch((e) =>
         updateJob(job.id, {
           status: "error",
           stage: "Failed",
           error: e?.message ?? "Audit crashed.",
         })
       );
+
+      let keptAlive = false;
+      try {
+        // Only resolves on Workers; throws or returns undefined elsewhere.
+        const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+        const ctx = getCloudflareContext?.()?.ctx as
+          | { waitUntil?: (p: Promise<unknown>) => void }
+          | undefined;
+        if (typeof ctx?.waitUntil === "function") {
+          ctx.waitUntil(task);
+          keptAlive = true;
+        }
+      } catch {
+        // Not running on Cloudflare — fall through to the Node behaviour.
+      }
+
+      // Node: the process stays alive on its own, so nothing more is needed.
+      if (!keptAlive) void task;
     } else {
       // Serverless fallback: trigger the background worker over HTTP (not awaited).
       void fetch(`${baseUrl(req)}/api/audit/run`, {

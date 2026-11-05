@@ -1,6 +1,7 @@
 // POST /api/audit/run  { jobId }
 // Internal background worker. Invoked (fire-and-forget) by /api/audit/start.
 // Protected by an internal secret so it can't be triggered externally.
+import { runInBackground } from "@/lib/bg";
 import { NextRequest, NextResponse } from "next/server";
 import { getJob, updateJob } from "@/lib/store/jobs";
 import { runAudit } from "@/lib/orchestrator";
@@ -21,12 +22,15 @@ export async function POST(req: NextRequest) {
 
     // Run the audit in the background and return immediately so the trigger
     // request resolves fast. The process stays alive on a long-lived server.
-    void runAudit(job).catch((e) =>
-      updateJob(job.id, {
-        status: "error",
-        stage: "Failed",
-        error: e?.message ?? "Audit crashed.",
-      })
+    // Workers kills floating promises when the response returns.
+    await runInBackground(
+      runAudit(job).catch((e) =>
+        updateJob(job.id, {
+          status: "error",
+          stage: "Failed",
+          error: e?.message ?? "Audit crashed.",
+        })
+      )
     );
 
     return NextResponse.json({ ok: true });

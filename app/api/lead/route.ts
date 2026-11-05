@@ -1,6 +1,7 @@
 // app/api/lead/route.ts
 // Captures a lead before an audit runs. Enforces a real *company* email:
 // valid format, not a free/public provider, and the domain has live MX records.
+import { runInBackground } from "@/lib/bg";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { promises as dns } from "dns";
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     // never delay the user or the audit. The lead is already saved above, so if
     // the push fails we still have it.
     if (sheetsConfigured()) {
-      void pushLeadToSheet(lead).catch((err) => {
+      void runInBackground(pushLeadToSheet(lead)).catch((err) => {
         console.error("[lead] Sheets push failed (lead saved to backup):", err);
       });
     }
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
     // Slack notify), also in the background — same reasoning as the Sheets
     // push: never delay the user, the lead is already safe in Redis.
     if (attioConfigured()) {
-      void pushLeadToAttio(lead).catch((err) => {
+      void runInBackground(pushLeadToAttio(lead)).catch((err) => {
         console.error("[lead] Attio push failed (lead saved to backup):", err);
       });
     }
