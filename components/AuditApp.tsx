@@ -1,204 +1,337 @@
-'use client'
+"use client";
+// components/AuditApp.tsx
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { AuditJob } from "@/types/audit";
+import { COUNTRIES, LANGUAGES } from "@/lib/locations";
+import { SearchableSelect } from "./SearchableSelect";
+import { LeadGate } from "./LeadGate";
+import { apiPath, BASE_PATH } from "./Gate";
+import { Report } from "./Report";
+import { gtmEvent } from "@/lib/gtm";
 
-import { useState } from 'react';
+type Phase = "input" | "processing" | "done" | "error";
 
-export default function AuditApp() {
-  const [url, setUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('');
-  const [report, setReport] = useState<any>(null);
+// Parse a fetch Response safely. If the server crashed and returned an empty or
+// non-JSON body, surface a real message instead of "Unexpected end of JSON input".
+async function readJson(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) {
+    throw new Error(
+      res.ok
+        ? "The server returned an empty response."
+        : `Server error ${res.status} (${res.statusText || "no message"}).`
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Non-JSON (e.g. an HTML error page) — show a trimmed snippet.
+    throw new Error(
+      `Server error ${res.status}: ${text.slice(0, 180).replace(/\s+/g, " ").trim()}`
+    );
+  }
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim()) return;
+export function AuditApp({ internal = false, initialUrl = "" }: { internal?: boolean; initialUrl?: string }) {
+  const [phase, setPhase] = useState<Phase>("input");
+  const [url, setUrl] = useState(initialUrl);
+  const [country, setCountry] = useState("Kenya");
+  const [language, setLanguage] = useState("English");
+  const [keyword, setKeyword] = useState("");
+  const [competitorUrl, setCompetitorUrl] = useState("");
+  const [job, setJob] = useState<AuditJob | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [gateOpen, setGateOpen] = useState(false);
+  const [verified, setVerified] = useState(internal); // internal team is pre-verified
+  const [leadId, setLeadId] = useState<string | undefined>(undefined);
+  const [leadEmail, setLeadEmail] = useState<string | undefined>(undefined);
+  const leadIdRef = useRef<string | undefined>(undefined);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    setLoading(true);
-    setReport(null);
-    setStatus('Extracting site context and generating buyer prompts...');
+  const stopPoll = () => { if (pollRef.current) clearInterval(pollRef.current); pollRef.current = null; };
+  useEffect(() => () => stopPoll(), []);
 
-    try {
-      // Step 1: Start the audit (Extract Context)
-      const startRes = await fetch('/api/audit/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() })
-      });
-      
-      const startData = await startRes.json();
-      if (!startRes.ok) throw new Error(startData.error || 'Failed to extract context');
-      
-      const { brandName, domain, prompts } = startData;
-      
-      let aggregated = {
-        visibilityScore: 0,
-        shareOfVoice: 0,
-        citationShare: 0,
-        totalTargetMentions: 0,
-        totalCompetitorMentions: 0,
-        sentimentBreakdown: { positive: 0, neutral: 0, negative: 0 },
-        engineQueriesCount: 0,
-        targetCitationsCount: 0,
-        allCitationsCount: 0,
-        competitorMap: {} as Record<string, number>,
-        citationsFound: [] as { url: string; engine: string }[],
-        queries: [] as any[]
-      };
-
-      // Step 2: Run queries for each prompt
-      for (let i = 0; i < prompts.length; i++) {
-        setStatus(`Testing prompt ${i + 1} of ${prompts.length}: "${prompts[i]}"...`);
-        
-        const runRes = await fetch('/api/audit/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: prompts[i], brandName, domain })
-        });
-        
-        if (runRes.ok) {
-          const runData = await runRes.json();
-          aggregated.engineQueriesCount += runData.engineQueriesCount;
-          aggregated.totalTargetMentions += runData.targetMentions;
-          aggregated.totalCompetitorMentions += runData.competitorMentions;
-          aggregated.allCitationsCount += runData.allCitationsCount;
-          aggregated.targetCitationsCount += runData.targetCitationsCount;
-          
-          aggregated.sentimentBreakdown.positive += runData.sentiment.positive;
-          aggregated.sentimentBreakdown.neutral += runData.sentiment.neutral;
-          aggregated.sentimentBreakdown.negative += runData.sentiment.negative;
-          
-          for (const [comp, count] of Object.entries(runData.competitors as Record<string, number>)) {
-            aggregated.competitorMap[comp] = (aggregated.competitorMap[comp] || 0) + count;
-          }
-          
-          aggregated.citationsFound.push(...runData.citationsFound);
-          aggregated.queries.push(...runData.queries);
-        }
+  // Persist the current job id in the URL (?job=…) so a page refresh — e.g. after
+  // a dropped connection — restores the SAME dashboard from storage instead of
+  // wiping it and forcing a re-audit. While we're at it, swap the bare tool
+  // root for a clean, shareable path with the audited site in it, e.g.
+  // /ranktomorrow/welcometomorrow.io (or /ranktomorrow/seo/welcometomorrow.io
+  // for the internal tool) instead of a long job/lead id string.
+  const setJobParam = (jobId: string | null, lead?: string | null) => {
+    if (typeof window === "undefined") return;
+    const u = new URL(window.location.href);
+    if (jobId) u.searchParams.set("job", jobId); else u.searchParams.delete("job");
+    if (lead) u.searchParams.set("lead", lead); else if (lead === null) u.searchParams.delete("lead");
+    if (jobId) {
+      const slug = prettyHost(url);
+      if (slug && /\./.test(slug)) {
+        u.pathname = `${BASE_PATH}${internal ? "/seo" : ""}/${encodeURIComponent(slug)}`;
       }
-
-      // Step 3: Finalize Metrics
-      const totalAllMentions = aggregated.totalTargetMentions + aggregated.totalCompetitorMentions;
-      aggregated.visibilityScore = aggregated.engineQueriesCount > 0 ? (aggregated.totalTargetMentions / aggregated.engineQueriesCount) * 100 : 0;
-      aggregated.shareOfVoice = totalAllMentions > 0 ? (aggregated.totalTargetMentions / totalAllMentions) * 100 : 0;
-      aggregated.citationShare = aggregated.allCitationsCount > 0 ? (aggregated.targetCitationsCount / aggregated.allCitationsCount) * 100 : 0;
-
-      const competitorLeaderboard = Object.entries(aggregated.competitorMap)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 6);
-
-      setReport({ ...aggregated, brandName, domain, competitorLeaderboard });
-    } catch (err: any) {
-      console.error(err);
-      setStatus(`Error: ${err.message}`);
-    } finally {
-      setLoading(false);
     }
+    window.history.replaceState(null, "", u.toString());
   };
 
+  const pollJob = useCallback((jobId: string) => {
+    stopPoll();
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
+        const j: AuditJob = await readJson(r);
+        setJob(j);
+        if (j.status === "done") {
+          stopPoll();
+          setPhase("done");
+          // Measurement team's conversion event — fired ONLY here, at the real
+          // moment the audit completes and the result is available (per their
+          // spec: "Only fire this when the audit has actually completed").
+          // Deliberately NOT fired on the refresh-restore path below, so
+          // reloading the results page can't double-count the conversion.
+          gtmEvent("seo_audit_complete", { tool_name: "seo_audit" });
+        }
+        if (j.status === "error") { stopPoll(); setError(j.error || "Audit failed"); setPhase("error"); }
+      } catch (e: any) {
+        stopPoll();
+        setError(e.message || "Lost connection to the audit.");
+        setPhase("error");
+      }
+    }, 2500);
+  }, []);
+
+  // On mount: if the URL has ?job=…, restore that audit (running or finished)
+  // rather than starting from a blank form. This makes refresh non-destructive.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const jobId = new URL(window.location.href).searchParams.get("job");
+    const savedLead = new URL(window.location.href).searchParams.get("lead");
+    if (!jobId) return;
+    if (savedLead) { leadIdRef.current = savedLead; setLeadId(savedLead); }
+    setPhase("processing");
+    (async () => {
+      try {
+        const r = await fetch(apiPath(`/api/audit/status?id=${jobId}`));
+        const j: AuditJob = await readJson(r);
+        setJob(j);
+        if (j.status === "done") { setPhase("done"); return; }
+        if (j.status === "error") { setError(j.error || "Audit failed"); setPhase("error"); return; }
+        pollJob(jobId); // still running — resume the progress bar
+      } catch {
+        setJobParam(null); // job expired/not found — fall back to the form
+        setPhase("input");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollJob]);
+
+  // Clicking Audit first opens the lead gate (unless internal or already verified).
+  const start = useCallback(() => {
+    setError(null);
+    if (!/\./.test(url)) { setError("Enter a valid URL, e.g. example.com"); return; }
+    if (!internal && !verified) { setGateOpen(true); return; }
+    void runAudit();
+  }, [url, verified, internal]);
+
+  const runAudit = useCallback(async () => {
+    setPhase("processing");
+    try {
+      gtmEvent("audit_start", { site: prettyHost(url), country, internal });
+      const res = await fetch(apiPath("/api/audit/start"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, country, language, targetKeyword: keyword, competitorUrl, internal, leadId: leadIdRef.current }),
+      });
+      const data = await readJson(res);
+      if (!res.ok) throw new Error(data.error || "Failed to start audit");
+      const jobId = data.jobId as string;
+      setJobParam(jobId, leadIdRef.current ?? null); // persist so refresh restores audit + lead
+
+      // Kick off the worker request and DELIBERATELY leave it open.
+      //
+      // Cloudflare Workers have no duration limit while the client stays
+      // connected, but kill background work ~30s after a response is sent.
+      // Holding this request open is what lets a 1-3 minute audit finish.
+      // We never await it — progress comes from polling /status, which reads
+      // the stages runAudit writes to Redis as it goes.
+      void fetch(apiPath("/api/audit/run"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      }).catch(() => {});
+
+      pollJob(jobId);
+    } catch (e: any) {
+      setError(e.message);
+      setPhase("error");
+    }
+  }, [url, country, language, keyword, competitorUrl, internal, pollJob]);
+
+  if (phase === "done" && job?.report) {
+    return (
+      <div className="relative z-10">
+        <Report report={job.report} ai={job.aiVisibility} gated={!internal} jobId={job.id} leadId={leadId} email={leadEmail} />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-12 font-sans">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="text-center space-y-3">
-          <div className="inline-block px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded-full text-xs font-semibold text-cyan-400 uppercase tracking-widest">
-            Generative Engine Optimization (GEO)
-          </div>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white">
-            AI Visibility & Mentions Audit
-          </h1>
-          <p className="text-slate-400 text-sm md:text-base max-w-2xl mx-auto">
-            Audit your brand’s real-time visibility, citations, sentiment, and share of voice.
+    <section className="wt-hero">
+      <div className="wt-container">
+      {gateOpen && (
+        <LeadGate
+          url={url}
+          onVerified={(id, mail) => { leadIdRef.current = id; setLeadId(id); setLeadEmail(mail); setVerified(true); setGateOpen(false); void runAudit(); }}
+        />
+      )}
+      {/* Hero — acf-hero-banner-v4: centred header, max-width 468px */}
+      <div className="wt-hero__header">
+        <div className="wt-hero__label">SEO &amp; GEO Audit Tool</div>
+        <h1 className="wt-hero__title">Free, Simple<br />SEO &amp; GEO Audit</h1>
+        <div className="wt-hero__description">
+          <p>
+            Analyze your website&apos;s readiness for AI search engines.<br />
+            <strong>That&apos;s our thing.</strong>
           </p>
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 max-w-2xl mx-auto">
-          <input
-            type="url"
-            required
-            placeholder="https://example.com"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            className="flex-1 px-4 py-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition disabled:opacity-50 text-sm shadow-lg shadow-cyan-500/20"
-          >
-            {loading ? 'Auditing...' : 'Run Audit'}
-          </button>
-        </form>
-
-        {loading && (
-          <div className="text-center py-16 space-y-3">
-            <div className="inline-block w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-slate-400 text-sm">{status}</p>
+      {phase === "input" || phase === "error" ? (
+        <div className="rt-tool">
+          <div className="rt-bar">
+            <div className="rt-bar__field">
+              {url.trim().length > 2 && (
+                <img
+                  src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(prettyHost(url))}&sz=64`}
+                  alt=""
+                  className="h-5 w-5 shrink-0 rounded-sm"
+                  onError={(e) => { (e.target as HTMLImageElement).style.visibility = "hidden"; }}
+                />
+              )}
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && start()}
+                placeholder="Example.com"
+                className="rt-bar__input"
+              />
+            </div>
+            <button
+              onClick={start}
+              className="c-button c-button--blue"
+            >
+              Audit
+            </button>
           </div>
-        )}
 
-        {report && (
-          <div className="space-y-8 animate-fadeIn">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
-                <div className="text-xs text-slate-400 font-medium">AI Visibility Score</div>
-                <div className="text-3xl font-extrabold text-cyan-400 mt-2">{report.visibilityScore.toFixed(0)}%</div>
-                <div className="text-xs text-slate-500 mt-1">Mentioned in {report.totalTargetMentions} AI answers</div>
-              </div>
-              <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
-                <div className="text-xs text-slate-400 font-medium">AI Share of Voice (SOV)</div>
-                <div className="text-3xl font-extrabold text-indigo-400 mt-2">{report.shareOfVoice.toFixed(1)}%</div>
-                <div className="text-xs text-slate-500 mt-1">vs. {report.totalCompetitorMentions} competitor mentions</div>
-              </div>
-              <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
-                <div className="text-xs text-slate-400 font-medium">Citation Share</div>
-                <div className="text-3xl font-extrabold text-emerald-400 mt-2">{report.citationShare.toFixed(1)}%</div>
-                <div className="text-xs text-slate-500 mt-1">{report.citationsFound.length} links directly to your domain</div>
-              </div>
-              <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-2xl">
-                <div className="text-xs text-slate-400 font-medium">Sentiment Stance</div>
-                <div className="flex gap-2 mt-2 items-center">
-                  <span className="text-emerald-400 font-bold text-sm">+{report.sentimentBreakdown.positive} pos</span>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-slate-400 text-sm">{report.sentimentBreakdown.neutral} neu</span>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-rose-400 font-bold text-sm">-{report.sentimentBreakdown.negative} neg</span>
-                </div>
-              </div>
+          {/* Country / language / keyword / competitor selectors */}
+          <div className="rt-fields">
+            <SearchableSelect label="Country" value={country} onChange={setCountry}
+              options={COUNTRIES.map((c) => c.country)} placeholder="Search your country…" />
+            <SearchableSelect label="Language" value={language} onChange={setLanguage}
+              options={LANGUAGES.map((l) => l.language)} searchable={false} placeholder="Select language" />
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
+                Target keyword (optional)
+              </label>
+              <input value={keyword} onChange={(e) => setKeyword(e.target.value)}
+                placeholder="e.g. growth agency"
+                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-blue" />
             </div>
-
-            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-              <h2 className="text-lg font-bold text-white mb-4">Competitors Dominating This Niche</h2>
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                {report.competitorLeaderboard.map((comp: any, idx: number) => (
-                  <div key={idx} className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-                    <div className="text-sm font-semibold text-slate-200 truncate">{comp.name}</div>
-                    <div className="text-xs text-slate-500 mt-1">{comp.count} mentions</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-white">Engine Query Log</h2>
-              <div className="space-y-3">
-                {report.queries.map((q: any, idx: number) => (
-                  <div key={idx} className="bg-slate-900/40 border border-slate-800/80 p-5 rounded-2xl space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-white">"{q.prompt}"</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2.5 py-1 rounded-md bg-slate-800 text-slate-300">{q.engine}</span>
-                        <span className={`text-xs px-2.5 py-1 rounded-md font-medium ${q.targetMentioned ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'}`}>
-                          {q.targetMentioned ? 'Target Mentioned' : 'Not Mentioned'}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-slate-400 leading-relaxed">{q.summary}</p>
-                  </div>
-                ))}
-              </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">
+                Competitor URL (optional)
+              </label>
+              <input value={competitorUrl} onChange={(e) => setCompetitorUrl(e.target.value)}
+                placeholder="e.g. competitor.com"
+                className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition placeholder:text-white/35 focus:border-blue" />
             </div>
           </div>
+
+          {error && <p className="mt-3 text-center text-sm font-semibold text-bad">{error}</p>}
+
+          {/* What we check visibility across */}
+          <div className="rt-plats">
+            <span>Checks your visibility across</span>
+            <span className="rt-plat">
+              <img src="https://www.google.com/s2/favicons?domain=chatgpt.com&sz=32" alt="" className="h-4 w-4" /> ChatGPT
+            </span>
+            <span className="rt-plat">
+              <img src="https://www.google.com/s2/favicons?domain=perplexity.ai&sz=32" alt="" className="h-4 w-4" /> Perplexity
+            </span>
+            <span className="rt-plat">
+              <img src="https://www.google.com/s2/favicons?domain=claude.ai&sz=32" alt="" className="h-4 w-4" /> Claude
+            </span>
+            <span className="rt-plat">
+              <img src="https://www.google.com/s2/favicons?domain=google.com&sz=32" alt="" className="h-4 w-4" /> Google
+            </span>
+          </div>
+        </div>
+      ) : (
+        <Processing job={job} url={url} country={country} language={language} internal={internal} />
+      )}
+      </div>
+    </section>
+  );
+}
+
+function Processing({ job, url, country, language, internal }: {
+  job: AuditJob | null; url: string; country: string; language: string; internal?: boolean;
+}) {
+  const progress = job?.progress ?? 0;
+  const stage = job?.stage ?? "Starting";
+  // Track how long we've been waiting so we can reassure during a cold start.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const waking = (!job || job.status === "queued") && elapsed > 6;
+  return (
+    <div className="mt-16 flex flex-col items-center text-center">
+      <div className="relative">
+        {/* green halo behind the spinner */}
+        <div className="halo-pulse absolute -inset-6 rounded-full bg-wtgreen/25 blur-2xl" />
+        <div className="spinner relative h-16 w-16 rounded-full border-4 border-white/15 border-t-wtgreen" />
+      </div>
+      <div className="mt-10 w-full max-w-md">
+        <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="h-2 rounded-full bg-wtgreen transition-all duration-500"
+            style={{ width: `${Math.max(progress, waking ? 5 : 0)}%` }} />
+        </div>
+        <p className="mt-3 text-sm font-semibold text-paper">{stage}…</p>
+        {waking && (
+          <p className="mt-2 text-xs text-muted">
+            {internal
+              ? "Starting up — then a full crawl of up to 500 pages."
+              : "Starting up — then crawling your key pages."}
+          </p>
         )}
       </div>
+      <p className="mt-6 max-w-md text-muted">
+        Wait as your site is being audited — auditing{" "}
+        <span className="font-bold text-paper">{prettyHost(url)}, {country}, {language}</span>{" "}
+        {internal
+          ? "can take up to 30 minutes for a full crawl of up to 500 pages and the most accurate results."
+          : "can take up to 3 minutes for the most accurate results."}{" "}
+        Please don&apos;t cancel or close this tab midway.
+      </p>
     </div>
   );
+}
+
+function Select({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void; options: string[];
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted">{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-glassBorder bg-glass px-3 py-2.5 text-sm text-paper outline-none transition focus:border-blue">
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function prettyHost(url: string): string {
+  try { return new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace(/^www\./, ""); }
+  catch { return url; }
 }
