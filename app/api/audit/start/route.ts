@@ -1,110 +1,50 @@
-// POST /api/audit/start  { url, country, language, targetKeyword?, competitorUrl? }
-// Creates a job, triggers the background runner, returns { jobId } immediately.
-import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import type { AuditJob } from "@/types/audit";
-import { saveJob, updateJob, isRedisConfigured } from "@/lib/store/jobs";
-import { assertSafeUrl } from "@/lib/security/ssrf";
+import { NextResponse } from 'next/server';
+import OpenAI from 'openai';
 
-export const runtime = "nodejs";
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// On a long-lived server (Render, a VPS, `next start`) we run the audit in the
-// The audit always runs in /api/audit/run, driven by the BROWSER, which holds
-// that request open for its full duration.
-//
-// Why not run it here, inline?
-//   Cloudflare Workers destroy the isolate when the response returns, and
-//   ctx.waitUntil() only extends that by 30s — far short of a 1-3 minute audit.
-//   Cloudflare does NOT limit duration while the client stays connected, so the
-//   browser holding /run open is what makes a long audit possible.
-//
-// This is not the old fragile self-HTTP call (server fetching itself, which is
-// what used to leave jobs stuck at "Queued"). The CLIENT makes the request, so
-// there is no server-to-self hop, and the same code path works on Node too.
-
-function baseUrl(req: NextRequest): string {
-  // Prefer an explicit public URL; fall back to request origin.
-  const explicit = process.env.NEXT_PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
-  if (explicit) return explicit;
-  return `${req.nextUrl.protocol}//${req.headers.get("host")}`;
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    let body: any;
+    const { url } = await req.json();
+    if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+
+    const cleanUrl = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const domain = cleanUrl.split('/')[0].replace('www.', '');
+
+    let siteText = "";
     try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      const res = await fetch(`https://r.jina.ai/https://${cleanUrl}`, {
+        headers: { Accept: "text/plain" },
+        next: { revalidate: 3600 }
+      });
+      if (res.ok) siteText = (await res.text()).slice(0, 3000);
+    } catch (err) {
+      console.warn("Jina fetch failed.");
     }
 
-    const url = (body.url ?? "").trim();
-    if (!url || !/\./.test(url)) {
-      return NextResponse.json({ error: "Please enter a valid URL." }, { status: 400 });
-    }
-
-    // SSRF guard at the entry point: reject URLs that resolve to private/
-    // reserved addresses (or use a non-http scheme) BEFORE creating a job, so
-    // an attacker can't use the tool to reach internal services or the cloud
-    // metadata endpoint. Defense-in-depth — the fetcher enforces this again on
-    // every hop, but failing fast here is cleaner and cheaper.
-    try {
-      await assertSafeUrl(url);
-    } catch {
-      return NextResponse.json(
-        { error: "That URL can't be audited. Please enter a valid public website address." },
-        { status: 400 }
-      );
-    }
-
-    // Deployed audits need shared storage across serverless invocations.
-    if (!isRedisConfigured()) {
-      return NextResponse.json(
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      messages: [
         {
-          error:
-            "Storage is not configured. Set UPSTASH_REDIS_REST_URL and " +
-            "UPSTASH_REDIS_REST_TOKEN in your Vercel environment variables, then redeploy.",
+          role: "system",
+          content: "Extract brandName (string) and targetPrompts (array of 3 commercial buyer search prompts). Return JSON: {"brandName": "...", "targetPrompts": ["...", "...", "..."]}"
         },
-        { status: 500 }
-      );
-    }
+        { role: "user", content: `Target Domain: ${domain}\nSite Excerpt:\n${siteText}` }
+      ]
+    });
 
-    // Hard deadline stored ON the job. Even if the container restarts mid-audit
-    // (heavy sites can be memory-intensive) and the in-process watchdog dies, the
-    // status endpoint uses this to report the job as timed-out instead of letting
-    // the UI spin forever. Internal ~30.5 min (full crawl + all providers),
-    // external ~3.5 min (matches the orchestrator's budget cap + buffer).
-    const hardCapMs = (body.internal === true ? 1_800_000 : 180_000) + 30_000;
-
-    const job: AuditJob = {
-      id: randomUUID(),
-      status: "queued",
-      stage: "Queued",
-      progress: 0,
-      input: {
-        url,
-        country: body.country || "Kenya",
-        language: body.language || "English",
-        targetKeyword: body.targetKeyword?.trim() || undefined,
-        competitorUrl: body.competitorUrl?.trim() || undefined,
-        internal: body.internal === true,
-        leadId: typeof body.leadId === "string" && body.leadId.trim() ? body.leadId.trim() : undefined,
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deadlineAt: Date.now() + hardCapMs,
-    };
-
-    await saveJob(job); // throws a clear message if Redis creds are wrong
-
-    // Job is persisted; the browser now opens /api/audit/run to execute it.
-
-    return NextResponse.json({ jobId: job.id });
-  } catch (err: any) {
-    // Always return JSON so the client never sees "Unexpected end of JSON input".
-    return NextResponse.json(
-      { error: err?.message ?? "Failed to start audit." },
-      { status: 500 }
-    );
+    const parsed = JSON.parse(completion.choices[0].message.content || '{}');
+    return NextResponse.json({
+      brandName: parsed.brandName || domain.split('.')[0],
+      prompts: parsed.targetPrompts || [
+        `Best software alternatives to ${domain}`,
+        `Top tools for ${domain.split('.')[0]}`,
+        `Who are the best providers for ${domain.split('.')[0]}?`
+      ],
+      domain
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

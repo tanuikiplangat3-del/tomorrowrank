@@ -1,64 +1,120 @@
-// POST /api/audit/run  { jobId }
-//
-// Executes an audit that /api/audit/start has already persisted. The BROWSER
-// calls this and holds the connection open for the whole run, which is what
-// allows a 1-3 minute audit on Cloudflare Workers (no duration limit while the
-// client is connected; ctx.waitUntil() would only give 30s).
-//
-// Authorisation, since a browser cannot hold INTERNAL_SECRET:
-//   - a server-to-server caller may still present x-internal-secret, OR
-//   - the caller presents a jobId that exists and is still "queued".
-// jobIds are random UUIDs, so they are unguessable, and the "queued" check
-// makes this single-use: once an audit starts, the same id cannot re-trigger
-// it. That closes the replay/amplification risk the secret was guarding.
-import { NextRequest, NextResponse } from "next/server";
-import { getJob, updateJob } from "@/lib/store/jobs";
-import { runAudit } from "@/lib/orchestrator";
+import { NextResponse } from 'next/server';
+import OpenAI from 'openai';
 
-export const runtime = "nodejs";
-export const maxDuration = 300; // long crawls; Render ignores, Vercel Pro honors
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function POST(req: NextRequest) {
+async function queryPerplexity(prompt: string) {
+  if (!process.env.PERPLEXITY_API_KEY) return { content: "", citations: [] };
   try {
-    const secret = req.headers.get("x-internal-secret");
-    const hasSecret =
-      !!process.env.INTERNAL_SECRET && secret === process.env.INTERNAL_SECRET;
+    const res = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "sonar",
+        messages: [{ role: "system", content: "Recommend top brands with citations." }, { role: "user", content: prompt }]
+      })
+    });
+    if (!res.ok) return { content: "", citations: [] };
+    const data = await res.json();
+    return { content: data.choices?.[0]?.message?.content || "", citations: data.citations || [] };
+  } catch { return { content: "", citations: [] }; }
+}
 
-    const { jobId } = await req.json();
-    const job = await getJob(jobId);
-    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+async function queryDataForSEO(keyword: string) {
+  const login = process.env.DATAFORSEO_LOGIN;
+  const password = process.env.DATAFORSEO_PASSWORD;
+  if (!login || !password) return { content: "", citations: [] };
+  const credentials = Buffer.from(`${login}:${password}`).toString("base64");
+  try {
+    const res = await fetch("https://api.dataforseo.com/v3/serp/google/organic/live/advanced", {
+      method: "POST",
+      headers: { "Authorization": `Basic ${credentials}`, "Content-Type": "application/json" },
+      body: JSON.stringify([{ keyword, location_code: 2840, language_code: "en", device: "desktop" }])
+    });
+    if (!res.ok) return { content: "", citations: [] };
+    const json = await res.json();
+    const items = json?.tasks?.[0]?.result?.[0]?.items || [];
+    const aiItem = items.find((i: any) => i.type === "ai_overview");
+    if (!aiItem) return { content: "", citations: [] };
+    return { content: aiItem.text || "", citations: (aiItem.items || []).map((ref: any) => ref.url).filter(Boolean) };
+  } catch { return { content: "", citations: [] }; }
+}
 
-    // Without the secret, only an untouched job may be started, and only once.
-    if (!hasSecret && job.status !== "queued") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+export async function POST(req: Request) {
+  try {
+    const { prompt, brandName, domain } = await req.json();
+
+    const [pplxResult, dfseoResult] = await Promise.all([
+      queryPerplexity(prompt),
+      queryDataForSEO(prompt)
+    ]);
+
+    const enginesToAudit = [
+      { name: "Perplexity", data: pplxResult },
+      { name: "Google AI Overview", data: dfseoResult }
+    ];
+
+    let resultData = {
+      engineQueriesCount: 0,
+      targetMentions: 0,
+      competitorMentions: 0,
+      targetCitationsCount: 0,
+      allCitationsCount: 0,
+      sentiment: { positive: 0, neutral: 0, negative: 0 },
+      competitors: {} as Record<string, number>,
+      citationsFound: [] as any[],
+      queries: [] as any[]
+    };
+
+    for (const engine of enginesToAudit) {
+      if (!engine.data.content) continue;
+      resultData.engineQueriesCount++;
+
+      for (const link of engine.data.citations) {
+        resultData.allCitationsCount++;
+        if (link.includes(domain)) {
+          resultData.targetCitationsCount++;
+          resultData.citationsFound.push({ url: link, engine: engine.name });
+        }
+      }
+
+      const evalRes = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: `Evaluate AI response for visibility of '${brandName}'. Return JSON: {"targetBrandMentioned": boolean, "targetSentiment": "positive"|"neutral"|"negative"|"not_mentioned", "competitors": ["brand1"], "snippetSummary": "summary"}` },
+          { role: "user", content: engine.data.content }
+        ]
+      });
+
+      const analysis = JSON.parse(evalRes.choices[0].message.content || '{}');
+      if (analysis.targetBrandMentioned) {
+        resultData.targetMentions++;
+        if (analysis.targetSentiment === 'positive') resultData.sentiment.positive++;
+        if (analysis.targetSentiment === 'neutral') resultData.sentiment.neutral++;
+        if (analysis.targetSentiment === 'negative') resultData.sentiment.negative++;
+      }
+
+      (analysis.competitors || []).forEach((c: string) => {
+        resultData.competitors[c] = (resultData.competitors[c] || 0) + 1;
+        resultData.competitorMentions++;
+      });
+
+      resultData.queries.push({
+        prompt,
+        engine: engine.name,
+        targetMentioned: analysis.targetBrandMentioned,
+        sentiment: analysis.targetSentiment,
+        summary: analysis.snippetSummary,
+        competitors: analysis.competitors || []
+      });
     }
 
-    // Claim it immediately so a duplicate call cannot start a second run.
-    await updateJob(job.id, { status: "running", stage: "Starting" });
-
-    // AWAIT the audit, holding this request open until it finishes.
-    //
-    // Cloudflare Workers: ctx.waitUntil() only extends execution for 30s after
-    // a response is sent, which is far short of a 1-3 minute audit. But the
-    // docs are explicit that there is NO duration limit while the client stays
-    // connected. So the browser fires this request and leaves it open; the
-    // Worker keeps running for as long as it takes. Progress still reaches the
-    // UI because runAudit writes each stage to Redis, which /status polls.
-    //
-    // Node: identical behaviour, just a long-lived request.
-    await runAudit(job).catch((e) =>
-      updateJob(job.id, {
-        status: "error",
-        stage: "Failed",
-        error: e?.message ?? "Audit crashed.",
-      })
-    );
-
-    return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? "Worker failed." },
-      { status: 500 }
-    );
+    return NextResponse.json(resultData);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
